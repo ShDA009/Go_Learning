@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    {{template "head" .}}
+    <title>Go Learning — Изучай Go</title>
+</head>
+<body>
+    {{template "header" .}}
+    
+    <main class="main">
+        <div class="index-page">
+            <section class="hero">
+                <h1>Изучай Go</h1>
+                <p class="hero-subtitle">Структурированные уроки с теорией, примерами и практикой</p>
+                
+                {{if .Stats}}
+                <div class="progress-overview">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: {{if .Stats.TotalLessons}}{{printf "%.0f" (mulf (divf .Stats.CompletedCount .Stats.TotalLessons) 100.0)}}{{else}}0{{end}}%"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="stat-card">
+                            <span class="stat-value">{{.Stats.CompletedCount}}</span>
+                            <span class="stat-label">пройдено</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value">{{.Stats.InProgressCount}}</span>
+                            <span class="stat-label">в процессе</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value">⭐ {{.Stats.EarnedPoints}}</span>
+                            <span class="stat-label">очков</span>
+                        </div>
+                    </div>
+                    {{if or .Stats.CompletedCount .Stats.InProgressCount .Stats.EarnedPoints}}
+                    <div class="reset-progress-container">
+                        <button class="btn btn-danger btn-sm reset-progress-btn" onclick="resetProgress()">
+                            🔄 Сбросить прогресс
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+            </section>
+
+            <section class="modules">
+                {{range .Modules}}
+                <div class="module-card">
+                    <h2 class="module-title">{{.Module.Title}}</h2>
+                    <ul class="lesson-list">
+                        {{$progress := $.Progress}}
+                        {{range .Lessons}}
+                        {{$p := index $progress .ID}}
+                        <li class="lesson-item {{if $p}}{{statusClass $p.Status}}{{end}}">
+                            <a href="/lessons/{{.Slug}}" class="lesson-link">
+                                <span class="lesson-status">
+                                    {{if $p}}{{statusIcon $p.Status}}{{else}}⬜{{end}}
+                                </span>
+                                <span class="lesson-title">{{.Title}}</span>
+                                <span class="lesson-meta">~{{.ReadingTimeMin}} мин</span>
+                            </a>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+                {{else}}
+                <div class="empty-state">
+                    <p>Уроки ещё не загружены.</p>
+                    <p>Запустите импорт: <code>go run ./cmd/ingest --db ./data.db --demo</code></p>
+                </div>
+                {{end}}
+            </section>
+        </div>
+    </main>
+    
+    {{template "footer" .}}
+    {{template "scripts" .}}
+</body>
+</html>

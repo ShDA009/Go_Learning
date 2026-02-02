@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    {{template "head" .}}
+    <title>{{.Lesson.Title}} — Go Learning</title>
+</head>
+<body>
+    {{template "header" .}}
+    
+    <main class="main">
+        <div class="lesson-page">
+            <aside class="lesson-sidebar">
+                <div class="lesson-nav">
+                    {{if .PrevLesson}}
+                    <a href="/lessons/{{.PrevLesson.Slug}}" class="nav-btn prev">← Назад</a>
+                    {{else}}
+                    <span class="nav-btn disabled">← Назад</span>
+                    {{end}}
+                    {{if .NextLesson}}
+                    <a href="/lessons/{{.NextLesson.Slug}}" class="nav-btn next">Далее →</a>
+                    {{else}}
+                    <span class="nav-btn disabled">Далее →</span>
+                    {{end}}
+                </div>
+                
+                <nav class="toc">
+                    <h3>Содержание</h3>
+                    <ul>
+                        {{range .Lesson.Sections}}
+                        <li><a href="#section-{{.ID}}">{{sectionIcon .Kind}} {{.Title}}</a></li>
+                        {{end}}
+                        {{if .Lesson.Tasks}}
+                        <li><a href="#practice">📝 Практика</a></li>
+                        {{end}}
+                        <li><a href="#notes">📒 Заметки</a></li>
+                    </ul>
+                </nav>
+                
+                <div class="progress-widget">
+                    <h3>Прогресс</h3>
+                    <div class="status-buttons">
+                        <button class="status-btn {{if eq .Progress.Status "reading"}}active{{end}}" 
+                                data-status="reading" data-lesson-id="{{.Lesson.ID}}">
+                            📖 Читаю
+                        </button>
+                        <button class="status-btn {{if eq .Progress.Status "done"}}active{{end}}" 
+                                data-status="done" data-lesson-id="{{.Lesson.ID}}">
+                            ✅ Пройден
+                        </button>
+                    </div>
+                </div>
+            </aside>
+            
+            <article class="lesson-content">
+                <header class="lesson-header">
+                    {{if .Lesson.Module}}
+                    <span class="module-badge">{{.Lesson.Module.Title}}</span>
+                    {{end}}
+                    <h1>{{.Lesson.Title}}</h1>
+                    <div class="lesson-meta-bar">
+                        <span>⏱ ~{{.Lesson.ReadingTimeMin}} мин</span>
+                        {{if .Lesson.SourceURL}}
+                        <a href="{{.Lesson.SourceURL}}" target="_blank" rel="noopener" class="source-link">Источник ↗</a>
+                        {{end}}
+                    </div>
+                </header>
+                
+                {{range .Lesson.Sections}}
+                <section id="section-{{.ID}}" class="lesson-section section-{{.Kind}}">
+                    <h2>{{sectionIcon .Kind}} {{.Title}}</h2>
+                    <div class="section-content markdown">
+                        {{.BodyMD | markdown}}
+                    </div>
+                </section>
+                {{end}}
+                
+                {{if .Lesson.Tasks}}
+                <section id="practice" class="lesson-section section-practice">
+                    <h2>📝 Практика</h2>
+                    
+                    {{range .Lesson.Tasks}}
+                    <div class="task-card" data-task-id="{{.ID}}">
+                        <div class="task-header">
+                            <h3>{{.Title}}</h3>
+                            <span class="task-points">{{.Points}} очков</span>
+                        </div>
+                        
+                        <div class="task-prompt markdown">
+                            {{.PromptMD | markdown}}
+                        </div>
+                        
+                        <div class="code-editor">
+                            <textarea class="code-input" placeholder="Введите ваш код здесь...">{{.StarterCode}}</textarea>
+                        </div>
+                        
+                        <div class="task-actions">
+                            <button class="btn btn-secondary run-btn">▶ Запустить</button>
+                            <button class="btn btn-primary check-btn">✓ Проверить</button>
+                        </div>
+                        
+                        <div class="task-output" style="display: none;">
+                            <h4>Результат:</h4>
+                            <pre class="output-content"></pre>
+                        </div>
+                    </div>
+                    {{end}}
+                </section>
+                {{end}}
+                
+                <section id="notes" class="lesson-section section-notes">
+                    <h2>📒 Мои заметки</h2>
+                    <div class="notes-editor">
+                        <textarea class="notes-input" 
+                                  data-lesson-id="{{.Lesson.ID}}"
+                                  placeholder="Запишите важные мысли, вопросы или заметки...">{{.Note.NoteMD}}</textarea>
+                        <button class="btn btn-secondary save-notes-btn">💾 Сохранить</button>
+                        <span class="notes-status"></span>
+                    </div>
+                </section>
+            </article>
+        </div>
+    </main>
+    
+    {{template "footer" .}}
+    {{template "scripts" .}}
+</body>
+</html>

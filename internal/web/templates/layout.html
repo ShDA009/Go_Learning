@@ -1,0 +1,44 @@
+{{define "header"}}
+<header class="header">
+    <div class="header-inner">
+        <a href="/" class="logo">
+            <span class="logo-icon">🐹</span>
+            <span class="logo-text">Go Learning</span>
+        </a>
+        <nav class="nav">
+            <a href="/" class="nav-link">Уроки</a>
+            <a href="/search" class="nav-link">Поиск</a>
+        </nav>
+        {{if .Stats}}
+        <div class="stats-mini">
+            <span class="stat">⭐ {{.Stats.EarnedPoints}}/{{.Stats.TotalPoints}}</span>
+            <span class="stat">✅ {{.Stats.CompletedCount}}/{{.Stats.TotalLessons}}</span>
+        </div>
+        {{end}}
+    </div>
+</header>
+{{end}}
+
+{{define "footer"}}
+<footer class="footer">
+    <p>Go Learning — учись программировать на Go 💙</p>
+</footer>
+{{end}}
+
+{{define "head"}}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- CodeMirror для редактора кода -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/app.js"></script>
+{{end}}
