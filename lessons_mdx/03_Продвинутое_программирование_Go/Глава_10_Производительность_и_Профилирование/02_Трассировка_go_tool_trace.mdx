@@ -1,0 +1,174 @@
+# Трассировка выполнения: go tool trace
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **pprof** отвечает на “где горячо”, а **trace** — на “что происходит во времени”
+2. Trace показывает планировщик, блокировки, GC, сетевые события, состояние горутин
+3. Полезно для **contention**, “зависаний”, лишних горутин и странных latency spikes
+4. Трейс лучше снимать **короткими окнами** (5–30 секунд) под контролируемой нагрузкой
+5. Самый удобный путь — `go test -trace` или `runtime/trace` в коде
+</Overview>
+
+<Theory>
+### Что такое runtime trace
+
+`runtime/trace` записывает события рантайма Go:
+- создание/парковка/пробуждение горутин
+- планирование на OS threads
+- GC циклы и stop-the-world
+- блокировки (каналы, mutex, syscalls)
+- сетевые события (poller)
+
+Это не “профиль функций”, а **таймлайн**. Поэтому trace хорошо отвечает на вопросы:
+- почему p99 вырос, хотя CPU не загружен?
+- почему увеличилось время ожидания?
+- где именно горутины “паркуются” и почему?
+- почему сервис “подвисает” при GC?
+
+### pprof vs trace (практическое правило)
+
+- **pprof**: ищем горячие функции, аллокации, “что оптимизировать”
+- **trace**: ищем блокировки, contention, scheduler/GC проблемы, “почему тормозит при конкуренции”
+</Theory>
+
+<Syntax>
+### Снятие трейса в тестах (самый простой способ)
+
+```bash
+go test -run '^$' -bench=. -trace trace.out ./...
+go tool trace trace.out
+```
+
+Или для конкретного теста:
+
+```bash
+go test -run TestSomething -trace trace.out ./...
+go tool trace trace.out
+```
+
+### Снятие трейса в коде через `runtime/trace`
+
+```go
+import "runtime/trace"
+
+f, _ := os.Create("trace.out")
+defer f.Close()
+
+_ = trace.Start(f)
+defer trace.Stop()
+
+// ... участок, который хотим изучить ...
+```
+
+Открытие:
+
+```bash
+go tool trace trace.out
+```
+</Syntax>
+
+<Examples>
+### Пример: короткий trace вокруг конкурентной нагрузки
+
+```go
+package main
+
+import (
+	"os"
+	"runtime/trace"
+	"sync"
+)
+
+func main() {
+	f, _ := os.Create("trace.out")
+	defer f.Close()
+	_ = trace.Start(f)
+	defer trace.Stop()
+
+	var wg sync.WaitGroup
+	wg.Add(100)
+	for i := 0; i < 100; i++ {
+		go func() {
+			defer wg.Done()
+			// имитация работы
+			for j := 0; j < 50000; j++ {
+				_ = j * j
+			}
+		}()
+	}
+	wg.Wait()
+}
+```
+
+После запуска:
+
+```bash
+go run main.go
+go tool trace trace.out
+```
+
+### На что смотреть в UI trace
+
+- **Goroutines**: кто и где блокируется, сколько живёт
+- **Network blocking**: есть ли “подвисания” на I/O
+- **GC**: частота и длительность циклов, есть ли “пилы” по паузам
+- **Scheduler**: много ли runnable goroutines, нет ли starvation
+</Examples>
+
+<Pitfalls>
+1. **Слишком длинный trace**: файлы становятся огромными и непрактичными
+2. **Снимать без нагрузки**: получите красивую, но бесполезную картинку
+3. **Не фиксировать условия**: сравнивайте trace только при одинаковых вводных
+4. **Пытаться “оптимизировать trace”**: сначала сформулируйте гипотезу (что подозреваете)
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/runtime/trace`
+- `https://go.dev/blog/execution-traces-2016`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Когда выбрать trace вместо pprof?</Title>
+<Prompt>
+Приведите 3 примера проблем, которые лучше диагностируются через `go tool trace`, чем через `pprof`.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("trace: contention, scheduler/GC, блокировки/latency во времени")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+trace: contention, scheduler/GC, блокировки/latency во времени
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Снимите trace в тесте/бенчмарке</Title>
+<Prompt>
+Снимите `trace.out` для вашего пакета (через `go test -trace` или `runtime/trace`) и найдите хотя бы один участок с блокировкой/ожиданием. Коротко опишите, что вы увидели.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("trace.out: где блокировки/ожидание и почему")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+trace.out: где блокировки/ожидание и почему
+</ExpectedOutput>
+</Task>
+

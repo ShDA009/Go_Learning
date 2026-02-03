@@ -1,0 +1,162 @@
+# Миграции БД в Go
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. Миграции — обязательная часть backend‑разработки (схема БД живёт вместе с кодом)
+2. Подход: **версионированные SQL файлы** + инструмент применения (goose/migrate)
+3. Миграции должны быть **повторяемыми** и работать в CI
+4. В проде миграции — это риск: блокировки, время выполнения, совместимость
+5. Лучшие практики: маленькие миграции, обратимость где возможно, тест на “up” в CI
+</Overview>
+
+<Theory>
+### Почему нельзя “ручками”
+
+Если схему править вручную:
+- у разных окружений разная схема
+- нельзя быстро поднять dev окружение
+- невозможно повторить историю изменений
+
+Миграции дают:
+- воспроизводимость
+- код‑ревью изменений БД
+- возможность отката (иногда)
+
+### Где запускать миграции
+
+Есть два типовых подхода:
+
+1) **Отдельный шаг** (рекомендуется): миграции запускаются отдельной командой в CI/CD  
+2) **При старте приложения**: удобно, но рискованно (конкурентный запуск, блокировки, непредсказуемое время)
+
+Для capstone проектов можно начать с “при старте”, но лучше дойти до отдельного шага.
+</Theory>
+
+<Syntax>
+### Структура миграций (пример)
+
+```
+migrations/
+  0001_init.up.sql
+  0001_init.down.sql
+  0002_add_users_email_index.up.sql
+  0002_add_users_email_index.down.sql
+```
+
+### Пример: migrate (golang-migrate)
+
+```bash
+# создать миграцию
+migrate create -ext sql -dir migrations -seq init
+
+# применить
+migrate -path migrations -database "$DATABASE_URL" up
+
+# откатить одну
+migrate -path migrations -database "$DATABASE_URL" down 1
+```
+
+### Пример: goose
+
+```bash
+goose -dir migrations postgres "$DATABASE_URL" up
+goose -dir migrations postgres "$DATABASE_URL" down
+```
+</Syntax>
+
+<Examples>
+### Пример: init миграция (Postgres)
+
+`0001_init.up.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS users_created_at_idx ON users(created_at);
+```
+
+`0001_init.down.sql`
+
+```sql
+DROP TABLE IF EXISTS users;
+```
+
+### Пример: docker-compose для dev с Postgres
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+```
+</Examples>
+
+<Pitfalls>
+1. **Длинные ALTER на больших таблицах**: может залочить таблицу на проде
+2. **Невозможный down**: некоторые изменения необратимы — фиксируйте это в процессе
+3. **Миграции + код несовместимы**: планируйте backward‑compat (двухфазные деплои)
+4. **Конкурентный запуск миграций**: несколько инстансов пытаются мигрировать одновременно
+5. **Нет теста миграций**: миграции должны проходить в CI на чистой БД
+</Pitfalls>
+
+<Links>
+- `https://github.com/golang-migrate/migrate`
+- `https://github.com/pressly/goose`
+- `https://www.postgresql.org/docs/current/sql-altertable.html`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Добавьте инструмент миграций в capstone REST</Title>
+<Prompt>
+Выберите `goose` или `migrate`, добавьте в репозиторий структуру `migrations/`, опишите команды `make migrate-up/migrate-down` (или аналог).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("migrations: tool выбран + команды up/down")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+migrations: tool выбран + команды up/down
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: CI проверяет миграции</Title>
+<Prompt>
+Добавьте шаг в CI: поднять Postgres (service container), применить миграции на чистую БД, запустить интеграционные тесты.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("CI: postgres + migrate up + integration tests")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+CI: postgres + migrate up + integration tests
+</ExpectedOutput>
+</Task>
+

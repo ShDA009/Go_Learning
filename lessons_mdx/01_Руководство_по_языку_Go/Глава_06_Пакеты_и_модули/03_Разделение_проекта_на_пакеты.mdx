@@ -1,0 +1,711 @@
+# Разделение проекта на пакеты
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Один пакет — одна папка** — все файлы в папке должны принадлежать одному пакету
+2. **Имя пакета = имя папки** — по соглашению (не обязательно, но рекомендуется)
+3. **Импорт внутренних пакетов** — `import "модуль/путь/к/пакету"`
+4. **Экспорт** — только идентификаторы с заглавной буквы видны из других пакетов
+5. **Вложенные пакеты** — пакеты можно организовывать в иерархию папок
+</Overview>
+
+<Theory>
+### Зачем разделять на пакеты?
+
+По мере роста проекта один файл становится нечитаемым. Пакеты помогают:
+- **Организовать код** по функциональности
+- **Инкапсулировать** детали реализации
+- **Переиспользовать** код в разных проектах
+- **Ускорить компиляцию** — компилируются только изменённые пакеты
+
+### Правило: один пакет = одна папка
+
+Все файлы в папке должны иметь одинаковое `package`:
+
+```
+utils/
+├── math.go      // package utils
+├── strings.go   // package utils
+└── helpers.go   // package utils ← все одинаковые!
+```
+
+**Исключение:** `_test.go` файлы могут иметь `package utils_test`.
+
+### Как именовать пакеты?
+
+**Хорошие имена:**
+- Короткие, в нижнем регистре: `http`, `json`, `user`
+- Без подчёркиваний и mixedCaps: `stringutil`, не `string_util`
+- Единственное число: `user`, не `users`
+
+**Плохие имена:**
+- `utils`, `helpers`, `common` — слишком общие
+- `myPackage` — camelCase не принят
+- `user_models` — подчёркивания
+
+### Экспорт: заглавная буква
+
+```go
+package user
+
+type User struct {       // Экспортируется
+    Name    string       // Экспортируется
+    email   string       // НЕ экспортируется
+}
+
+func NewUser() *User {}  // Экспортируется
+func validate() {}       // НЕ экспортируется
+```
+
+Неэкспортируемые идентификаторы доступны только внутри пакета.
+
+### Циклические зависимости запрещены
+
+```
+Пакет A импортирует B
+Пакет B импортирует A
+→ ОШИБКА компиляции!
+```
+
+**Решения:**
+1. Объединить пакеты
+2. Выделить общий пакет C
+3. Использовать интерфейсы
+
+### internal/ — приватные пакеты
+
+Папка `internal/` делает пакеты приватными для модуля:
+
+```
+mymodule/
+├── internal/
+│   └── secret/    ← импортировать могут только пакеты mymodule
+└── public/        ← могут импортировать все
+```
+
+### Типичная структура Go проекта
+
+```
+project/
+├── cmd/
+│   └── app/main.go    # точки входа
+├── internal/          # приватный код
+├── pkg/               # публичные библиотеки
+├── api/               # API спецификации
+├── config/            # конфигурация
+├── go.mod
+└── go.sum
+```
+</Theory>
+
+<Syntax>
+### Структура проекта
+
+```
+mymodule/
+├── go.mod
+├── main.go                  # package main
+├── utils/
+│   └── helpers.go           # package utils
+├── models/
+│   ├── user.go              # package models
+│   └── product.go           # package models
+└── handlers/
+    └── api.go               # package handlers
+```
+
+### Импорт внутренних пакетов
+
+```go
+import "mymodule/utils"
+import "mymodule/models"
+import "mymodule/handlers"
+```
+
+### Вложенные пакеты
+
+```
+mymodule/
+└── services/
+    ├── auth/
+    │   └── auth.go          # package auth
+    └── storage/
+        └── storage.go       # package storage
+```
+
+```go
+import "mymodule/services/auth"
+import "mymodule/services/storage"
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовая структура с пакетами
+
+**Структура проекта:**
+```
+hello/
+├── go.mod
+├── main.go
+└── messages/
+    └── messages.go
+```
+
+**go.mod:**
+```go
+module hello
+
+go 1.21
+```
+
+**messages/messages.go:**
+```go
+package messages
+
+import "fmt"
+
+// Hello — экспортируемая функция (заглавная буква)
+func Hello() {
+    fmt.Println("Hello from messages package!")
+}
+
+// Goodbye — ещё одна экспортируемая функция
+func Goodbye() {
+    fmt.Println("Goodbye!")
+}
+
+// helper — НЕэкспортируемая функция (строчная буква)
+func helper() string {
+    return "I'm private"
+}
+```
+
+**main.go:**
+```go
+package main
+
+import "hello/messages"  // импорт: модуль/пакет
+
+func main() {
+    messages.Hello()    // OK — экспортируемая
+    messages.Goodbye()  // OK — экспортируемая
+    // messages.helper() // ОШИБКА — приватная функция
+}
+```
+
+### Несколько файлов в одном пакете
+
+**Структура:**
+```
+myapp/
+├── go.mod
+├── main.go
+└── utils/
+    ├── strings.go
+    └── numbers.go
+```
+
+**utils/strings.go:**
+```go
+package utils
+
+import "strings"
+
+func ToUpper(s string) string {
+    return strings.ToUpper(s)
+}
+
+func Reverse(s string) string {
+    runes := []rune(s)
+    for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+        runes[i], runes[j] = runes[j], runes[i]
+    }
+    return string(runes)
+}
+```
+
+**utils/numbers.go:**
+```go
+package utils
+
+func Sum(numbers ...int) int {
+    total := 0
+    for _, n := range numbers {
+        total += n
+    }
+    return total
+}
+
+func Max(a, b int) int {
+    if a > b {
+        return a
+    }
+    return b
+}
+```
+
+**main.go:**
+```go
+package main
+
+import (
+    "fmt"
+    "myapp/utils"
+)
+
+func main() {
+    // Функции из strings.go
+    fmt.Println(utils.ToUpper("hello"))    // HELLO
+    fmt.Println(utils.Reverse("golang"))   // gnalog
+    
+    // Функции из numbers.go
+    fmt.Println(utils.Sum(1, 2, 3, 4, 5))  // 15
+    fmt.Println(utils.Max(10, 20))         // 20
+}
+```
+
+### Вложенные пакеты
+
+**Структура:**
+```
+myapp/
+├── go.mod
+├── main.go
+└── messages/
+    ├── en/
+    │   └── english.go
+    └── ru/
+        └── russian.go
+```
+
+**messages/en/english.go:**
+```go
+package en
+
+func Hello() string {
+    return "Hello"
+}
+
+func Goodbye() string {
+    return "Goodbye"
+}
+```
+
+**messages/ru/russian.go:**
+```go
+package ru
+
+func Hello() string {
+    return "Привет"
+}
+
+func Goodbye() string {
+    return "Пока"
+}
+```
+
+**main.go:**
+```go
+package main
+
+import (
+    "fmt"
+    "myapp/messages/en"
+    "myapp/messages/ru"
+)
+
+func main() {
+    fmt.Println("English:", en.Hello(), en.Goodbye())
+    fmt.Println("Russian:", ru.Hello(), ru.Goodbye())
+}
+```
+
+### Практический пример: Веб-приложение
+
+**Структура:**
+```
+webapp/
+├── go.mod
+├── main.go
+├── models/
+│   └── user.go
+├── handlers/
+│   └── user_handler.go
+└── database/
+    └── db.go
+```
+
+**models/user.go:**
+```go
+package models
+
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+func NewUser(id int, name, email string) *User {
+    return &User{
+        ID:    id,
+        Name:  name,
+        Email: email,
+    }
+}
+
+func (u *User) String() string {
+    return u.Name + " <" + u.Email + ">"
+}
+```
+
+**database/db.go:**
+```go
+package database
+
+import "webapp/models"
+
+var users = make(map[int]*models.User)
+var nextID = 1
+
+func SaveUser(user *models.User) {
+    user.ID = nextID
+    users[nextID] = user
+    nextID++
+}
+
+func GetUser(id int) *models.User {
+    return users[id]
+}
+
+func GetAllUsers() []*models.User {
+    result := make([]*models.User, 0, len(users))
+    for _, user := range users {
+        result = append(result, user)
+    }
+    return result
+}
+```
+
+**handlers/user_handler.go:**
+```go
+package handlers
+
+import (
+    "fmt"
+    "webapp/database"
+    "webapp/models"
+)
+
+func CreateUser(name, email string) {
+    user := models.NewUser(0, name, email)
+    database.SaveUser(user)
+    fmt.Println("Created user:", user.String())
+}
+
+func ListUsers() {
+    users := database.GetAllUsers()
+    fmt.Println("All users:")
+    for _, user := range users {
+        fmt.Printf("  - %s\n", user.String())
+    }
+}
+```
+
+**main.go:**
+```go
+package main
+
+import "webapp/handlers"
+
+func main() {
+    handlers.CreateUser("Alice", "alice@example.com")
+    handlers.CreateUser("Bob", "bob@example.com")
+    handlers.ListUsers()
+}
+```
+
+### Экспорт констант, переменных, типов
+
+**config/config.go:**
+```go
+package config
+
+// Экспортируемые константы
+const (
+    AppName    = "MyApp"
+    AppVersion = "1.0.0"
+)
+
+// Экспортируемые переменные
+var (
+    Debug   = false
+    BaseURL = "http://localhost:8080"
+)
+
+// Экспортируемый тип
+type Settings struct {
+    Host string
+    Port int
+}
+
+// Экспортируемая функция
+func NewSettings(host string, port int) *Settings {
+    return &Settings{Host: host, Port: port}
+}
+
+// приватные (не экспортируемые)
+const maxRetries = 3
+var internalCache = make(map[string]string)
+```
+</Examples>
+
+<Pitfalls>
+### 1. Разные пакеты в одной папке
+
+```
+utils/
+├── strings.go  # package utils
+└── numbers.go  # package math  ← ОШИБКА!
+
+# Ошибка: found packages utils and math in .../utils
+```
+
+### 2. Циклический импорт
+
+```go
+// package a
+import "mymodule/b"
+
+// package b
+import "mymodule/a"  // ОШИБКА: import cycle
+
+// Решение: выделить общий код в третий пакет
+```
+
+### 3. Попытка экспортировать приватную функцию
+
+```go
+package utils
+
+func helper() string {  // приватная
+    return "help"
+}
+
+// В другом пакете
+utils.helper()  // undefined: utils.helper
+
+// Решение: переименовать в Helper()
+```
+
+### 4. Неправильный путь импорта
+
+```go
+// ❌ НЕПРАВИЛЬНО
+import "./utils"          // относительные пути не работают в модулях
+import "utils"            // нет пути к модулю
+
+// ✅ ПРАВИЛЬНО
+import "mymodule/utils"   // полный путь от корня модуля
+```
+
+### 5. Забыли про регистр
+
+```go
+// utils/math.go
+package utils
+
+func add(a, b int) int {  // приватная!
+    return a + b
+}
+
+// main.go
+result := utils.add(1, 2)  // ОШИБКА
+
+// Решение
+func Add(a, b int) int {   // Add с большой буквы
+    return a + b
+}
+```
+
+### 6. Конфликт имён пакетов
+
+```go
+import (
+    "mymodule/utils"
+    "github.com/other/utils"  // конфликт!
+)
+
+// Решение: псевдонимы
+import (
+    myutils "mymodule/utils"
+    otherutils "github.com/other/utils"
+)
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Экспортируемые имена</Title>
+<Prompt>
+Покажите разницу между public и private.
+</Prompt>
+<Hints>
+- PublicVar экспортируется
+- privateVar — только внутри пакета
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+var PublicVar = "Public"
+var privateVar = "private"
+
+func main() {
+    fmt.Println("Публичное:", PublicVar)
+    fmt.Println("Приватное:", privateVar)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Публичное: Public
+Приватное: private
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Экспортируемые поля</Title>
+<Prompt>
+Структура с public и private полями.
+</Prompt>
+<Hints>
+- В том же пакете доступны оба
+- Из другого пакета — только Name
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string // экспортируется
+    age  int    // приватное
+}
+
+func main() {
+    p := Person{Name: "Alice", age: 25}
+    fmt.Println("Имя:", p.Name)
+    fmt.Println("Возраст:", p.age)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Имя: Alice
+Возраст: 25
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Конструктор New</Title>
+<Prompt>
+Создайте функцию-конструктор NewPerson.
+</Prompt>
+<Hints>
+- func NewPerson(name string, age int) *person
+- Конвенция: New + имя типа
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type person struct {
+    name string
+    age  int
+}
+
+func NewPerson(name string, age int) *person {
+    return &person{name: name, age: age}
+}
+
+func main() {
+    p := NewPerson("Alice", 25)
+    fmt.Printf("Персона: {%s %d}\n", p.name, p.age)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Персона: {Alice 25}
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Getters</Title>
+<Prompt>
+Создайте getter методы.
+</Prompt>
+<Hints>
+- В Go getter не пишут GetName, а просто Name
+- Это конвенция Go
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+// TODO: Добавьте методы
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Имя: Bob
+Возраст: 30
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Setters</Title>
+<Prompt>
+Создайте setter методы.
+</Prompt>
+<Hints>
+- Получатель — указатель
+- func (p *person) SetName(n string)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Добавьте методы
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: {Alice 25}
+После: {Bob 30}
+</ExpectedOutput>
+</Task>

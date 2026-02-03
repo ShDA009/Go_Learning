@@ -1,0 +1,221 @@
+# Структурное логирование: log/slog
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. **log/slog** — стандартная библиотека для структурных логов (Go 1.21+)
+2. Структурные логи = сообщение + **ключи/значения** → легко искать и строить метрики
+3. В веб‑сервисах обязательны: **request_id**, статус, метод, путь, latency
+4. Старайтесь логировать **события**, а не “потоки текста”
+5. Не логируйте PII/секреты и контролируйте кардинальность полей
+</Overview>
+
+<Theory>
+### Почему структурные логи
+
+Если вы пишете:
+
+```text
+user 123 failed to create order 999 because timeout
+```
+
+то для поиска/фильтрации вы вынуждены парсить строки.
+
+Если вы пишете:
+
+```json
+{"msg":"create order failed","user_id":123,"order_id":999,"err":"timeout","request_id":"..."}
+```
+
+то:
+- можно легко фильтровать по `user_id`, `order_id`, `request_id`
+- можно строить алерты “ошибок стало больше”
+- можно коррелировать с трейсами (trace_id/span_id)
+
+### Базовые понятия slog
+
+- **Logger**: `*slog.Logger`
+- **Handler**: куда и в каком формате писать (Text/JSON)
+- **Attrs**: постоянные поля (`service`, `version`) и поля конкретного события
+- **Уровни**: Debug/Info/Warn/Error
+
+### Что логировать в REST сервисе (минимальный набор)
+
+- входящий запрос: `method`, `path`, `status`, `duration_ms`, `request_id`
+- ошибки: `err`, `kind`, `component`
+- бизнес‑события (важные): `order_created`, `payment_failed` и т.п.
+</Theory>
+
+<Syntax>
+### Базовая настройка
+
+```go
+handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	Level: slog.LevelInfo,
+})
+
+logger := slog.New(handler).With(
+	"service", "users",
+	"env", "dev",
+)
+slog.SetDefault(logger)
+```
+
+### Логирование
+
+```go
+slog.Info("user created", "user_id", id)
+slog.Error("db query failed", "err", err, "query", "SELECT ...")
+```
+
+### Логи с контекстом
+
+```go
+slog.InfoContext(ctx, "request finished", "status", 200)
+```
+</Syntax>
+
+<Examples>
+### Пример: request_id middleware (net/http)
+
+```go
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"log/slog"
+	"net/http"
+	"time"
+)
+
+type ctxKey string
+
+const requestIDKey ctxKey = "request_id"
+
+func newRequestID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := r.Header.Get("X-Request-Id")
+		if rid == "" {
+			rid = newRequestID()
+		}
+		ctx := context.WithValue(r.Context(), requestIDKey, rid)
+		w.Header().Set("X-Request-Id", rid)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		rid, _ := r.Context().Value(requestIDKey).(string)
+
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"request_id", rid,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+```
+
+### Пример: добавляем trace_id/span_id в лог (концепт)
+
+Когда подключите OpenTelemetry, можно вытаскивать идентификаторы так:
+
+```go
+sc := trace.SpanFromContext(ctx).SpanContext()
+logger.Info("something happened",
+	"trace_id", sc.TraceID().String(),
+	"span_id", sc.SpanID().String(),
+)
+```
+</Examples>
+
+<Pitfalls>
+1. **Слишком много логов**: увеличивает стоимость и усложняет анализ
+2. **PII/секреты**: не логируйте пароли, токены, полные карточные данные, сырые payload’ы
+3. **Высокая кардинальность**: не добавляйте поля вроде `user_email` в каждый лог (взрывает индекс)
+4. **Отсутствие request_id**: без него тяжело собирать историю одного запроса
+5. **Логи без контекста**: “ошибка” без `err` и без ключевых полей бесполезна
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/log/slog`
+- `https://go.dev/blog/slog`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Настройте JSON‑логер</Title>
+<Prompt>
+Настройте `log/slog` на вывод JSON в stdout, добавьте поля `service` и `env`. В проекте — сделайте так, чтобы уровень логирования менялся через переменную окружения.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("slog: JSON handler + service/env + level from env")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+slog: JSON handler + service/env + level from env
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Request ID и access log</Title>
+<Prompt>
+Добавьте middleware, который выставляет `X-Request-Id` и логирует завершение запроса с `method/path/status/duration_ms/request_id`.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("http middleware: request_id + access log")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+http middleware: request_id + access log
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Корреляция логов и трейсов</Title>
+<Prompt>
+После подключения OpenTelemetry добавьте в логи `trace_id/span_id` (минимум в access log). Проверьте, что по trace_id можно найти и лог, и трейс.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("logs+traces: trace_id/span_id в логах")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+logs+traces: trace_id/span_id в логах
+</ExpectedOutput>
+</Task>
+

@@ -1,0 +1,643 @@
+# Анонимные функции
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+- **Анонимная функция** — функция без имени (лямбда)
+- Определяется **непосредственно в месте использования**
+- Может быть **присвоена переменной** или **вызвана сразу**
+- Имеет доступ к переменным **окружающей области видимости**
+- Идеальна для **callback'ов** и одноразовых операций
+
+### Когда использовать анонимные функции?
+
+| Ситуация | Пример |
+|----------|--------|
+| Callback | `sort.Slice(data, func(i, j int) bool {...})` |
+| Горутины | `go func() { ... }()` |
+| Defer | `defer func() { ... }()` |
+| Одноразовая логика | Фильтрация, преобразование |
+| Замыкания | Захват переменных из контекста |
+</Overview>
+
+<Theory>
+### Что такое анонимная функция?
+
+**Анонимная функция** — это функция без имени. В других языках её называют:
+- Lambda (λ) — Python, Java
+- Arrow function — JavaScript
+- Block — Ruby
+
+В Go она объявляется так:
+```go
+func(параметры) тип_возврата {
+    // тело
+}
+```
+
+### Зачем функции без имени?
+
+Имя нужно для **повторного использования**. Если функция используется только один раз — имя не нужно:
+
+```go
+// С именем — избыточно для одноразового использования
+func isEven(x int) bool {
+    return x % 2 == 0
+}
+filter(numbers, isEven)
+
+// Без имени — компактнее
+filter(numbers, func(x int) bool {
+    return x % 2 == 0
+})
+```
+
+### Немедленный вызов (IIFE)
+
+Анонимную функцию можно вызвать сразу после объявления:
+
+```go
+result := func(a, b int) int {
+    return a + b
+}(2, 3)  // вызов с аргументами 2 и 3
+// result = 5
+```
+
+IIFE (Immediately Invoked Function Expression) полезен для:
+- Создания изолированной области видимости
+- Инициализации с логикой
+
+### Горутины с анонимными функциями
+
+Очень частое использование в Go:
+
+```go
+go func() {
+    // код выполняется в отдельной горутине
+}()  // не забудьте () для вызова!
+```
+
+### Defer с анонимной функцией
+
+```go
+func process() {
+    defer func() {
+        if r := recover(); r != nil {
+            log.Println("Recovered:", r)
+        }
+    }()
+    
+    // код, который может вызвать panic
+}
+```
+
+### Захват переменных
+
+Анонимная функция видит переменные из окружающего кода:
+
+```go
+multiplier := 2
+double := func(x int) int {
+    return x * multiplier  // видит multiplier
+}
+double(5)  // 10
+```
+
+**Важно:** Захватывается **ссылка**, не значение:
+
+```go
+funcs := make([]func(), 3)
+for i := 0; i < 3; i++ {
+    funcs[i] = func() {
+        fmt.Println(i)  // захватывает i
+    }
+}
+for _, f := range funcs {
+    f()  // выведет 3, 3, 3 (не 0, 1, 2!)
+}
+```
+
+**Решение:** Создать локальную копию:
+```go
+for i := 0; i < 3; i++ {
+    i := i  // локальная копия
+    funcs[i] = func() {
+        fmt.Println(i)  // теперь 0, 1, 2
+    }
+}
+```
+
+### Когда НЕ использовать анонимные функции?
+
+- Функция большая и сложная — дайте ей имя для читаемости
+- Функция используется несколько раз — избегайте дублирования
+- Для тестирования — именованные функции легче тестировать
+</Theory>
+
+<Syntax>
+### Анонимная функция в переменной
+```go
+f := func(параметры) тип {
+    // тело
+}
+f(аргументы)  // вызов
+```
+
+### Немедленный вызов (IIFE)
+```go
+func(параметры) тип {
+    // тело
+}(аргументы)
+```
+
+### Как аргумент
+```go
+process(data, func(x int) int {
+    return x * 2
+})
+```
+
+### Как возвращаемое значение
+```go
+func factory() func(int) int {
+    return func(x int) int {
+        return x * x
+    }
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Базовая анонимная функция
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Анонимная функция в переменной
+    greet := func(name string) {
+        fmt.Printf("Привет, %s!\n", name)
+    }
+    
+    greet("Мир")
+    greet("Go")
+    
+    // Функция с возвратом значения
+    add := func(a, b int) int {
+        return a + b
+    }
+    
+    fmt.Println("5 + 3 =", add(5, 3))
+}
+```
+
+### Пример 2: Немедленный вызов (IIFE)
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Immediately Invoked Function Expression
+    result := func(a, b int) int {
+        return a * b
+    }(5, 3)  // вызываем сразу!
+    
+    fmt.Println("5 * 3 =", result)  // 15
+    
+    // Без сохранения результата
+    func() {
+        fmt.Println("Это выполнится немедленно!")
+    }()
+}
+```
+
+### Пример 3: Анонимная функция как аргумент
+```go
+package main
+
+import (
+    "fmt"
+    "sort"
+)
+
+func main() {
+    numbers := []int{5, 2, 8, 1, 9, 3}
+    
+    // Сортировка с кастомным компаратором
+    sort.Slice(numbers, func(i, j int) bool {
+        return numbers[i] < numbers[j]
+    })
+    fmt.Println("По возрастанию:", numbers)
+    
+    // По убыванию
+    sort.Slice(numbers, func(i, j int) bool {
+        return numbers[i] > numbers[j]
+    })
+    fmt.Println("По убыванию:", numbers)
+    
+    // Сортировка строк по длине
+    words := []string{"apple", "pie", "a", "banana"}
+    sort.Slice(words, func(i, j int) bool {
+        return len(words[i]) < len(words[j])
+    })
+    fmt.Println("По длине:", words)
+}
+```
+
+### Пример 4: map/filter/reduce с анонимными функциями
+```go
+package main
+
+import "fmt"
+
+func mapInts(slice []int, fn func(int) int) []int {
+    result := make([]int, len(slice))
+    for i, v := range slice {
+        result[i] = fn(v)
+    }
+    return result
+}
+
+func filterInts(slice []int, fn func(int) bool) []int {
+    result := []int{}
+    for _, v := range slice {
+        if fn(v) {
+            result = append(result, v)
+        }
+    }
+    return result
+}
+
+func main() {
+    nums := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    
+    // Удвоение
+    doubled := mapInts(nums, func(x int) int {
+        return x * 2
+    })
+    fmt.Println("Удвоенные:", doubled)
+    
+    // Только чётные
+    evens := filterInts(nums, func(x int) bool {
+        return x%2 == 0
+    })
+    fmt.Println("Чётные:", evens)
+    
+    // Квадраты чётных
+    result := mapInts(
+        filterInts(nums, func(x int) bool { return x%2 == 0 }),
+        func(x int) int { return x * x },
+    )
+    fmt.Println("Квадраты чётных:", result)
+}
+```
+
+### Пример 5: Горутины с анонимными функциями
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    // Запуск горутины с анонимной функцией
+    go func() {
+        fmt.Println("Привет из горутины!")
+    }()
+    
+    // С параметром
+    for i := 1; i <= 3; i++ {
+        go func(n int) {
+            fmt.Printf("Горутина #%d\n", n)
+        }(i)  // передаём i как аргумент!
+    }
+    
+    time.Sleep(100 * time.Millisecond)
+    fmt.Println("Готово!")
+}
+```
+
+### Пример 6: defer с анонимной функцией
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Начало")
+    
+    // defer с анонимной функцией
+    defer func() {
+        fmt.Println("Это выполнится в конце")
+    }()
+    
+    // Захват текущего значения
+    x := 10
+    defer func(val int) {
+        fmt.Println("Захваченное значение:", val)
+    }(x)
+    
+    x = 20
+    
+    fmt.Println("x =", x)
+    fmt.Println("Конец main")
+}
+// Вывод:
+// Начало
+// x = 20
+// Конец main
+// Захваченное значение: 10
+// Это выполнится в конце
+```
+
+### Пример 7: Фабрика функций
+```go
+package main
+
+import "fmt"
+
+func makeAdder(n int) func(int) int {
+    return func(x int) int {
+        return x + n
+    }
+}
+
+func makeMultiplier(n int) func(int) int {
+    return func(x int) int {
+        return x * n
+    }
+}
+
+func main() {
+    add5 := makeAdder(5)
+    add10 := makeAdder(10)
+    
+    fmt.Println("3 + 5 =", add5(3))   // 8
+    fmt.Println("3 + 10 =", add10(3)) // 13
+    
+    double := makeMultiplier(2)
+    triple := makeMultiplier(3)
+    
+    fmt.Println("7 * 2 =", double(7))  // 14
+    fmt.Println("7 * 3 =", triple(7))  // 21
+}
+```
+
+### Пример 8: Обработчики событий
+```go
+package main
+
+import "fmt"
+
+type EventHandler func(string)
+
+type Button struct {
+    onClick EventHandler
+}
+
+func (b *Button) Click(data string) {
+    if b.onClick != nil {
+        b.onClick(data)
+    }
+}
+
+func main() {
+    button := &Button{}
+    
+    // Назначаем обработчик анонимной функцией
+    button.onClick = func(data string) {
+        fmt.Printf("Кнопка нажата! Данные: %s\n", data)
+    }
+    
+    button.Click("user_click")
+    
+    // Меняем обработчик
+    button.onClick = func(data string) {
+        fmt.Printf("Новый обработчик: %s\n", data)
+    }
+    
+    button.Click("another_click")
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Захват переменной цикла (классическая ошибка!)
+```go
+// ❌ Неправильно — все горутины получат последнее значение
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // скорее всего 3, 3, 3
+    }()
+}
+
+// ✅ Правильно — передаём значение как параметр
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        fmt.Println(n)  // 0, 1, 2 (в произвольном порядке)
+    }(i)
+}
+
+// ✅ Правильно — создаём локальную копию
+for i := 0; i < 3; i++ {
+    i := i  // важно: создаём новую переменную
+    go func() {
+        fmt.Println(i)
+    }()
+}
+```
+
+### 2. Забыли скобки при немедленном вызове
+```go
+// ❌ Неправильно — функция не вызвана
+result := func(x int) int {
+    return x * 2
+}  // result — это функция, не число!
+
+// ✅ Правильно — добавляем скобки с аргументами
+result := func(x int) int {
+    return x * 2
+}(5)  // result = 10
+```
+
+### 3. Использование defer в цикле
+```go
+// ❌ Плохо — все defer выполнятся в конце функции, не итерации
+for i := 0; i < 3; i++ {
+    defer fmt.Println(i)  // 2, 1, 0 в конце функции
+}
+
+// ✅ Лучше — используйте вложенную функцию
+for i := 0; i < 3; i++ {
+    func(n int) {
+        defer fmt.Println(n)
+    }(i)  // 0, 1, 2 сразу
+}
+```
+
+### 4. Изменение захваченной переменной
+```go
+// ⚠️ Осторожно — анонимная функция видит изменения
+x := 10
+fn := func() { fmt.Println(x) }
+
+x = 20
+fn()  // Выведет 20, не 10!
+
+// ✅ Если нужно захватить значение — передайте параметром
+x := 10
+fn := func(val int) func() {
+    return func() { fmt.Println(val) }
+}(x)
+
+x = 20
+fn()  // Выведет 10
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Простая анонимная функция</Title>
+<Prompt>
+Создайте и сразу вызовите анонимную функцию, которая выводит приветствие.
+</Prompt>
+<Hints>
+- Синтаксис: `func() { ... }()`
+- Скобки в конце — вызов функции
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Вызов анонимной функции:")
+    // Создайте и вызовите анонимную функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Вызов анонимной функции:
+Привет из анонимной функции!
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Анонимная функция с параметрами</Title>
+<Prompt>
+Создайте анонимную функцию, принимающую имя и возраст, и вызовите её.
+</Prompt>
+<Hints>
+- Синтаксис: `func(name string, age int) { ... }("Alice", 25)`
+- Аргументы передаются в скобках вызова
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Информация о пользователе:")
+    // Создайте анонимную функцию с параметрами
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Информация о пользователе:
+Имя: Alice, Возраст: 25
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Сохранение анонимной функции в переменной</Title>
+<Prompt>
+Сохраните анонимную функцию в переменной и вызовите её несколько раз.
+</Prompt>
+<Hints>
+- `cube := func(x int) int { return x*x*x }`
+- Переменная имеет тип func(int) int
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Функция в переменной:")
+    // Создайте cube и вызовите
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Функция в переменной:
+cube(2) = 8
+cube(3) = 27
+cube(4) = 64
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Анонимная функция с возвратом</Title>
+<Prompt>
+Создайте анонимную функцию, которая возвращает максимум из двух чисел, и сразу используйте результат.
+</Prompt>
+<Hints>
+- `result := func(a, b int) int { ... }(15, 23)`
+- Используйте if для выбора максимума
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Максимум 15 и 23:")
+    // Создайте анонимную функцию максимума
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Максимум 15 и 23:
+Результат: 23
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Коллекция анонимных функций</Title>
+<Prompt>
+Создайте срез анонимных функций-операций и примените каждую к числу.
+</Prompt>
+<Hints>
+- `ops := []func(int) int{ func(x int) int {...}, ... }`
+- Используйте range для перебора
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Применение операций к числу 5:")
+    // Создайте срез функций и примените
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Применение операций к числу 5:
+Операция 1: 10 (удвоение)
+Операция 2: 25 (квадрат)
+Операция 3: 6 (следующее)
+</ExpectedOutput>
+</Task>

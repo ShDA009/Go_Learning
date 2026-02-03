@@ -1,0 +1,794 @@
+# Передача потоков данных (Streaming)
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Поток данных** — последовательность значений, передаваемых через канал
+2. **Генератор** — функция, создающая и возвращающая канал с данными
+3. **for-range** — идиоматичный способ чтения потока до закрытия
+4. **defer close()** — гарантированное закрытие канала отправителем
+5. **Pipeline** — цепочка преобразований через каналы
+6. **Отмена** — механизм досрочной остановки потока
+</Overview>
+
+<Theory>
+### Что такое потоковая обработка?
+
+**Streaming** — это обработка данных по мере их поступления, без загрузки всего в память:
+
+```go
+// НЕ потоковая — грузим всё в память
+data := loadAllData()  // 10GB в памяти!
+process(data)
+
+// Потоковая — обрабатываем по частям
+for item := range dataStream() {
+    process(item)  // один элемент за раз
+}
+```
+
+### Паттерн Generator (Генератор)
+
+Функция создаёт канал и заполняет его в горутине:
+
+```go
+func numbers(n int) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)  // важно закрыть!
+        for i := 0; i < n; i++ {
+            ch <- i
+        }
+    }()
+    return ch  // возвращаем read-only канал
+}
+
+// Использование
+for n := range numbers(1000) {
+    fmt.Println(n)
+}
+```
+
+### Паттерн Pipeline (Конвейер)
+
+Цепочка преобразований данных:
+
+```go
+// Генерация → Удвоение → Фильтрация → Вывод
+
+func double(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for n := range in {
+            out <- n * 2
+        }
+    }()
+    return out
+}
+
+func filter(in <-chan int, pred func(int) bool) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for n := range in {
+            if pred(n) {
+                out <- n
+            }
+        }
+    }()
+    return out
+}
+
+// Собираем конвейер
+nums := numbers(100)
+doubled := double(nums)
+even := filter(doubled, func(n int) bool { return n%4 == 0 })
+
+for n := range even {
+    fmt.Println(n)
+}
+```
+
+### Fan-out: распараллеливание
+
+Несколько горутин читают из одного канала:
+
+```go
+jobs := make(chan Job)
+
+// 3 воркера обрабатывают параллельно
+for i := 0; i < 3; i++ {
+    go worker(jobs)
+}
+```
+
+### Fan-in: объединение
+
+Несколько каналов объединяются в один:
+
+```go
+func merge(channels ...<-chan int) <-chan int {
+    out := make(chan int)
+    var wg sync.WaitGroup
+    
+    for _, ch := range channels {
+        wg.Add(1)
+        go func(c <-chan int) {
+            defer wg.Done()
+            for n := range c {
+                out <- n
+            }
+        }(ch)
+    }
+    
+    go func() {
+        wg.Wait()
+        close(out)
+    }()
+    
+    return out
+}
+```
+
+### Отмена потока
+
+Через done-канал:
+
+```go
+func generator(done <-chan struct{}) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)
+        for i := 0; ; i++ {
+            select {
+            case <-done:
+                return  // прерываем при отмене
+            case ch <- i:
+            }
+        }
+    }()
+    return ch
+}
+```
+
+### Типичные ошибки
+
+1. **Забыли close()** → утечка горутин
+2. **Забыли defer** → паника при ошибке
+3. **Нет отмены** → горутины-зомби
+</Theory>
+
+<Syntax>
+### Генератор потока
+
+```go
+func generator() <-chan T {
+    ch := make(chan T)
+    go func() {
+        defer close(ch)
+        // отправляем данные в ch
+    }()
+    return ch
+}
+```
+
+### Чтение потока
+
+```go
+// Через for-range (автоматический выход при close)
+for value := range ch {
+    // обработка
+}
+
+// Вручную с проверкой
+for {
+    value, ok := <-ch
+    if !ok {
+        break
+    }
+    // обработка
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Генератор чисел
+
+```go
+package main
+
+import "fmt"
+
+func counter(max int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        defer close(ch)
+        for i := 1; i <= max; i++ {
+            ch <- i
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    for num := range counter(5) {
+        fmt.Println(num)
+    }
+}
+```
+
+### Генератор факториалов
+
+```go
+package main
+
+import "fmt"
+
+func factorials(n int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        defer close(ch)
+        
+        result := 1
+        for i := 1; i <= n; i++ {
+            result *= i
+            ch <- result
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    fmt.Println("Factorials:")
+    for f := range factorials(7) {
+        fmt.Println(f)
+    }
+}
+```
+
+### Генератор Фибоначчи
+
+```go
+package main
+
+import "fmt"
+
+func fibonacci(max int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        defer close(ch)
+        
+        a, b := 0, 1
+        for a <= max {
+            ch <- a
+            a, b = b, a+b
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    fmt.Println("Fibonacci <= 100:")
+    for f := range fibonacci(100) {
+        fmt.Println(f)
+    }
+}
+```
+
+### Pipeline: генератор → фильтр → обработчик
+
+```go
+package main
+
+import "fmt"
+
+// Генерация чисел
+func gen(nums ...int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for _, n := range nums {
+            out <- n
+        }
+    }()
+    return out
+}
+
+// Фильтрация чётных
+func filterEven(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for n := range in {
+            if n%2 == 0 {
+                out <- n
+            }
+        }
+    }()
+    return out
+}
+
+// Возведение в квадрат
+func square(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for n := range in {
+            out <- n * n
+        }
+    }()
+    return out
+}
+
+func main() {
+    // Pipeline: gen -> filterEven -> square
+    nums := gen(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    evens := filterEven(nums)
+    squared := square(evens)
+    
+    for n := range squared {
+        fmt.Println(n)  // 4, 16, 36, 64, 100
+    }
+}
+```
+
+### Генератор с отменой
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func infiniteCounter(done <-chan struct{}) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        defer close(ch)
+        
+        i := 1
+        for {
+            select {
+            case <-done:
+                fmt.Println("Generator: cancelled")
+                return
+            case ch <- i:
+                i++
+            }
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    done := make(chan struct{})
+    
+    nums := infiniteCounter(done)
+    
+    // Читаем 5 чисел
+    for i := 0; i < 5; i++ {
+        fmt.Println(<-nums)
+    }
+    
+    // Отменяем генератор
+    close(done)
+    
+    time.Sleep(100 * time.Millisecond)
+    fmt.Println("Done!")
+}
+```
+
+### Генератор из файла (имитация)
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type LogEntry struct {
+    Time    string
+    Level   string
+    Message string
+}
+
+func readLogs() <-chan LogEntry {
+    ch := make(chan LogEntry)
+    
+    go func() {
+        defer close(ch)
+        
+        // Имитация чтения из файла
+        logs := []LogEntry{
+            {"10:00:01", "INFO", "Server started"},
+            {"10:00:02", "DEBUG", "Loading config"},
+            {"10:00:05", "WARNING", "High memory usage"},
+            {"10:00:10", "ERROR", "Connection failed"},
+        }
+        
+        for _, log := range logs {
+            time.Sleep(100 * time.Millisecond)
+            ch <- log
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    fmt.Println("Reading logs...")
+    
+    for log := range readLogs() {
+        fmt.Printf("[%s] %s: %s\n", log.Time, log.Level, log.Message)
+    }
+    
+    fmt.Println("All logs read!")
+}
+```
+
+### Fan-Out: несколько обработчиков одного потока
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+func producer(n int) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)
+        for i := 1; i <= n; i++ {
+            ch <- i
+        }
+    }()
+    return ch
+}
+
+func worker(id int, jobs <-chan int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    for job := range jobs {
+        time.Sleep(50 * time.Millisecond)
+        fmt.Printf("Worker %d processed job %d\n", id, job)
+    }
+}
+
+func main() {
+    jobs := producer(10)
+    
+    var wg sync.WaitGroup
+    
+    // Fan-Out: 3 воркера читают из одного канала
+    for w := 1; w <= 3; w++ {
+        wg.Add(1)
+        go worker(w, jobs, &wg)
+    }
+    
+    wg.Wait()
+}
+```
+
+### Буферизированный поток
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func bufferedProducer(n, bufSize int) <-chan int {
+    ch := make(chan int, bufSize)  // буферизированный!
+    
+    go func() {
+        defer close(ch)
+        
+        for i := 1; i <= n; i++ {
+            fmt.Printf("Producing: %d (buffer: %d/%d)\n", 
+                i, len(ch), cap(ch))
+            ch <- i
+            time.Sleep(50 * time.Millisecond)
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    ch := bufferedProducer(10, 3)
+    
+    // Медленный потребитель
+    for n := range ch {
+        time.Sleep(200 * time.Millisecond)
+        fmt.Printf("  Consumed: %d\n", n)
+    }
+}
+```
+
+### Практический пример: Word Count Pipeline
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+// Генератор строк
+func lines(text string) <-chan string {
+    ch := make(chan string)
+    go func() {
+        defer close(ch)
+        for _, line := range strings.Split(text, "\n") {
+            if line != "" {
+                ch <- line
+            }
+        }
+    }()
+    return ch
+}
+
+// Разбивка на слова
+func words(in <-chan string) <-chan string {
+    ch := make(chan string)
+    go func() {
+        defer close(ch)
+        for line := range in {
+            for _, word := range strings.Fields(line) {
+                ch <- strings.ToLower(word)
+            }
+        }
+    }()
+    return ch
+}
+
+// Подсчёт
+func count(in <-chan string) <-chan map[string]int {
+    ch := make(chan map[string]int)
+    go func() {
+        defer close(ch)
+        counts := make(map[string]int)
+        for word := range in {
+            counts[word]++
+        }
+        ch <- counts
+    }()
+    return ch
+}
+
+func main() {
+    text := `Hello World
+Hello Go
+Go is awesome
+World of Go`
+
+    // Pipeline: lines -> words -> count
+    result := count(words(lines(text)))
+    
+    wordCounts := <-result
+    
+    for word, cnt := range wordCounts {
+        fmt.Printf("%s: %d\n", word, cnt)
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли закрыть канал
+
+```go
+func gen() <-chan int {
+    ch := make(chan int)
+    go func() {
+        ch <- 1
+        ch <- 2
+        // ❌ Забыли close(ch)
+    }()
+    return ch
+}
+
+// for-range зависнет навсегда
+for v := range gen() {
+    fmt.Println(v)
+}
+```
+
+### 2. Закрытие канала получателем
+
+```go
+// ❌ Получатель закрывает — отправитель может паниковать
+func consumer(ch chan int) {
+    for v := range ch {
+        fmt.Println(v)
+    }
+    close(ch)  // ❌ НЕПРАВИЛЬНО!
+}
+```
+
+### 3. Игнорирование отмены
+
+```go
+// ❌ Горутина не проверяет отмену
+func gen(done <-chan struct{}) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)
+        for i := 0; ; i++ {
+            ch <- i  // блокируется если никто не читает!
+        }
+    }()
+    return ch
+}
+
+// ✅ Проверяем done
+func genCorrect(done <-chan struct{}) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)
+        for i := 0; ; i++ {
+            select {
+            case <-done:
+                return
+            case ch <- i:
+            }
+        }
+    }()
+    return ch
+}
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: time.Now</Title>
+<Prompt>
+Получите текущее время.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    now := time.Now()
+    fmt.Println("Текущее время получено:", !now.IsZero())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Текущее время получено: true
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: time.Parse</Title>
+<Prompt>
+Распарсите строку в время.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    t, _ := time.Parse("2006-01-02", "2024-01-15")
+    fmt.Println("Год:", t.Year())
+    fmt.Println("Месяц:", t.Month())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Год: 2024
+Месяц: January
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: time.Format</Title>
+<Prompt>
+Отформатируйте время в строку.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    t, _ := time.Parse("2006-01-02", "2024-01-15")
+    fmt.Println("Формат 1:", t.Format("02.01.2006"))
+    fmt.Println("Формат 2:", t.Format("2006/01/02"))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Формат 1: 15.01.2024
+Формат 2: 2024/01/15
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: time.Duration</Title>
+<Prompt>
+Работа с длительностью.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    d := 1*time.Hour + 30*time.Minute
+    fmt.Println("1 час 30 минут =", d)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+1 час 30 минут = 1h30m0s
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: time.Add и Sub</Title>
+<Prompt>
+Добавьте и вычтите время.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+// TODO: Реализуйте решение
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
++1 день: 16
+-1 день: 14
+</ExpectedOutput>
+</Task>

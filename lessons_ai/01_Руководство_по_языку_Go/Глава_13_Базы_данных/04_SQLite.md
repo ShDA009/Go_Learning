@@ -45,6 +45,65 @@ db, err := sql.Open("sqlite3", "file:test.db?cache=shared&mode=rwc")
 
 ---
 
+## 📖 Теория
+
+### Что такое SQLite?
+
+**SQLite** — встраиваемая база данных в одном файле:
+- Не требует сервера
+- Вся БД в одном файле
+- Кроссплатформенная
+
+### Когда использовать?
+
+✅ **Подходит для:**
+- Прототипов и тестов
+- CLI утилит
+- Однопользовательских приложений
+
+❌ **Не подходит для:**
+- Высоконагруженных систем
+- Множества параллельных записей
+
+### Установка драйвера
+
+```bash
+go get -u github.com/mattn/go-sqlite3
+```
+
+⚠️ Требует CGO! На Windows нужен MinGW.
+
+### In-memory база для тестов
+
+```go
+// База в памяти — уничтожается при закрытии
+db, _ := sql.Open("sqlite3", ":memory:")
+defer db.Close()
+```
+
+### Важные настройки
+
+```go
+// WAL mode — лучше для конкурентного доступа
+db.Exec("PRAGMA journal_mode=WAL")
+
+// Внешние ключи (выключены по умолчанию!)
+db.Exec("PRAGMA foreign_keys=ON")
+```
+
+### Альтернатива без CGO
+
+```bash
+go get -u modernc.org/sqlite
+```
+
+```go
+import _ "modernc.org/sqlite"
+db, _ := sql.Open("sqlite", "./data.db")
+```
+
+---
+
 ## 💻 Примеры кода
 
 ### Создание базы и таблицы
@@ -565,28 +624,139 @@ db, _ := sql.Open("sqlite3", "/app/data/store.db")
 
 ---
 
-## 📝 Практика
+## 🏋️ Практические задания
 
-### Задача 1: Todo app
-Создайте приложение для задач с SQLite.
+### Задание 1: WebSocket upgrade
 
-### Задача 2: Test fixtures
-In-memory база для unit-тестов.
+Обновите соединение до WebSocket.
 
-### Задача 3: Config store
-Хранение конфигурации в SQLite.
+**Ожидаемый результат:**
+```
+Upgrade: upgrader.Upgrade(w, r, nil)
+```
 
-### Задача 4: Cache layer
-Кэширование данных в SQLite.
+**Начальный код:**
+```go
+package main
 
-### Задача 5: Backup/Restore
-Резервное копирование базы.
+import "fmt"
 
-### Задача 6: FTS search
-Full-Text Search в SQLite.
+func main() {
+    fmt.Println("Upgrade: upgrader.Upgrade(w, r, nil)")
+}
+```
 
-### Задача 7: Migrations
-Система миграций для SQLite.
+**Ожидаемый вывод:**
+```
+Upgrade: upgrader.Upgrade(w, r, nil)
+```
 
-### Задача 8: Analytics
-Хранение и анализ логов.
+**Баллы:** 15
+
+### Задание 2: gorilla/websocket
+
+Используйте gorilla/websocket.
+
+**Ожидаемый результат:**
+```
+Upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+```
+
+**Баллы:** 15
+
+### Задание 3: Отправка сообщений
+
+Отправьте сообщение через WebSocket.
+
+**Ожидаемый результат:**
+```
+Отправка: conn.WriteMessage(websocket.TextMessage, []byte(msg))
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Отправка: conn.WriteMessage(websocket.TextMessage, []byte(msg))")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Отправка: conn.WriteMessage(websocket.TextMessage, []byte(msg))
+```
+
+**Баллы:** 15
+
+### Задание 4: Получение сообщений
+
+Читайте сообщения из WebSocket.
+
+**Ожидаемый результат:**
+```
+Чтение: msgType, msg, err := conn.ReadMessage()
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Чтение: msgType, msg, err := conn.ReadMessage()")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Чтение: msgType, msg, err := conn.ReadMessage()
+```
+
+**Баллы:** 15
+
+### Задание 5: Ping/Pong
+
+Реализуйте heartbeat.
+
+**Ожидаемый результат:**
+```
+Heartbeat: conn.SetPingHandler, conn.SetPongHandler
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Heartbeat: conn.SetPingHandler, conn.SetPongHandler")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Heartbeat: conn.SetPingHandler, conn.SetPongHandler
+```
+
+**Баллы:** 15

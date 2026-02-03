@@ -43,25 +43,36 @@
                 {{end}}
             </section>
 
-            <section class="modules">
-                {{range .Modules}}
-                <div class="module-card">
-                    <h2 class="module-title">{{.Module.Title}}</h2>
-                    <ul class="lesson-list">
-                        {{$progress := $.Progress}}
-                        {{range .Lessons}}
-                        {{$p := index $progress .ID}}
-                        <li class="lesson-item {{if $p}}{{statusClass $p.Status}}{{end}}">
-                            <a href="/lessons/{{.Slug}}" class="lesson-link">
-                                <span class="lesson-status">
-                                    {{if $p}}{{statusIcon $p.Status}}{{else}}⬜{{end}}
-                                </span>
-                                <span class="lesson-title">{{.Title}}</span>
-                                <span class="lesson-meta">~{{.ReadingTimeMin}} мин</span>
-                            </a>
-                        </li>
+            <section class="courses">
+                {{range .Courses}}
+                <div class="course-section">
+                    <div class="course-header">
+                        <span class="course-icon">{{.Course.Icon}}</span>
+                        <h2 class="course-title">{{.Course.Title}}</h2>
+                    </div>
+                    
+                    <div class="modules">
+                        {{range .Modules}}
+                        <div class="module-card">
+                            <h3 class="module-title">{{.Module.Title}}</h3>
+                            <ul class="lesson-list">
+                                {{$progress := $.Progress}}
+                                {{range .Lessons}}
+                                {{$p := index $progress .ID}}
+                                <li class="lesson-item {{if $p}}{{statusClass $p.Status}}{{end}}">
+                                    <a href="/lessons/{{.Slug}}" class="lesson-link">
+                                        <span class="lesson-status">
+                                            {{if $p}}{{statusIcon $p.Status}}{{else}}⬜{{end}}
+                                        </span>
+                                        <span class="lesson-title">{{.Title}}</span>
+                                        <span class="lesson-meta">~{{.ReadingTimeMin}} мин</span>
+                                    </a>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
                         {{end}}
-                    </ul>
+                    </div>
                 </div>
                 {{else}}
                 <div class="empty-state">

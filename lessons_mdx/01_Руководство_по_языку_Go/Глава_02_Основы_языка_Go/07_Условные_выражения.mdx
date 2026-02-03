@@ -1,0 +1,596 @@
+# Условные выражения
+
+<Meta>
+reading_time: 11
+</Meta>
+
+<Overview>
+- Условные выражения возвращают **bool** (`true` или `false`)
+- Две категории: **операции сравнения** и **логические операции**
+- Операции сравнения: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- Логические операции: `&&` (И), `||` (ИЛИ), `!` (НЕ)
+- Используются в `if`, `for`, `switch` для управления потоком выполнения
+
+### Таблица операций сравнения
+
+| Операция | Описание | Пример | Результат |
+|----------|----------|--------|-----------|
+| `==` | Равно | `5 == 5` | `true` |
+| `!=` | Не равно | `5 != 3` | `true` |
+| `<` | Меньше | `3 < 5` | `true` |
+| `>` | Больше | `3 > 5` | `false` |
+| `<=` | Меньше или равно | `5 <= 5` | `true` |
+| `>=` | Больше или равно | `3 >= 5` | `false` |
+
+### Таблица логических операций
+
+| Операция | Описание | Пример | Результат |
+|----------|----------|--------|-----------|
+| `&&` | И (AND) | `true && false` | `false` |
+| `\|\|` | ИЛИ (OR) | `true \|\| false` | `true` |
+| `!` | НЕ (NOT) | `!true` | `false` |
+</Overview>
+
+<Theory>
+### Что такое условное выражение?
+
+**Условное выражение** — это выражение, результат которого `true` или `false`. Используется для принятия решений в программе.
+
+```go
+age >= 18       // true если возраст 18+
+name == "John"  // true если имя John
+```
+
+### Операции сравнения
+
+Сравнивают два значения и возвращают bool:
+
+```go
+5 == 5   // true (равны)
+5 != 3   // true (не равны)
+3 < 5    // true (меньше)
+3 > 5    // false (больше)
+5 <= 5   // true (меньше или равно)
+5 >= 3   // true (больше или равно)
+```
+
+**Важно:** Сравнивать можно только **совместимые типы**:
+```go
+5 == 5.0    // ОШИБКА! int и float64
+"5" == 5    // ОШИБКА! string и int
+```
+
+### Логические операции
+
+Комбинируют несколько условий:
+
+**AND (&&)** — оба должны быть true:
+```go
+age >= 18 && hasLicense  // Можно водить: 18+ И есть права
+```
+
+**OR (||)** — хотя бы одно должно быть true:
+```go
+isAdmin || isOwner  // Доступ: админ ИЛИ владелец
+```
+
+**NOT (!)** — инверсия:
+```go
+!isEmpty  // НЕ пустой = есть элементы
+```
+
+### Short-circuit evaluation (ленивые вычисления)
+
+Go не вычисляет второй операнд, если результат уже известен:
+
+```go
+// Если a == false, то b не вычисляется
+if a && b { ... }
+
+// Если a == true, то b не вычисляется
+if a || b { ... }
+```
+
+Это важно для защиты от ошибок:
+```go
+// Безопасно! Если ptr == nil, второе условие не проверяется
+if ptr != nil && ptr.Value > 0 { ... }
+```
+
+### Таблицы истинности
+
+**AND (&&):**
+| A | B | A && B |
+|---|---|--------|
+| true | true | true |
+| true | false | false |
+| false | true | false |
+| false | false | false |
+
+**OR (||):**
+| A | B | A \|\| B |
+|---|---|---------|
+| true | true | true |
+| true | false | true |
+| false | true | true |
+| false | false | false |
+
+### Приоритет логических операций
+
+1. `!` (NOT) — высший
+2. `&&` (AND)
+3. `||` (OR) — низший
+
+```go
+!a && b || c
+// равносильно: ((!a) && b) || c
+```
+
+Используйте скобки для явности!
+</Theory>
+
+<Syntax>
+### Операции сравнения
+```go
+a == b  // равны ли a и b
+a != b  // не равны ли a и b
+a < b   // a меньше b
+a > b   // a больше b
+a <= b  // a меньше или равно b
+a >= b  // a больше или равно b
+```
+
+### Логические операции
+```go
+!a       // отрицание a
+a && b   // a И b (оба true)
+a || b   // a ИЛИ b (хотя бы один true)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Операции сравнения
+```go
+package main
+
+import "fmt"
+
+func main() {
+    a, b := 10, 20
+    
+    fmt.Printf("%d == %d: %t\n", a, b, a == b)  // false
+    fmt.Printf("%d != %d: %t\n", a, b, a != b)  // true
+    fmt.Printf("%d < %d: %t\n", a, b, a < b)    // true
+    fmt.Printf("%d > %d: %t\n", a, b, a > b)    // false
+    fmt.Printf("%d <= %d: %t\n", a, b, a <= b)  // true
+    fmt.Printf("%d >= %d: %t\n", a, b, a >= b)  // false
+}
+```
+
+### Пример 2: Сравнение строк
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s1 := "apple"
+    s2 := "banana"
+    s3 := "apple"
+    
+    fmt.Println("apple == banana:", s1 == s2)  // false
+    fmt.Println("apple == apple:", s1 == s3)   // true
+    fmt.Println("apple < banana:", s1 < s2)    // true (лексикографически)
+    fmt.Println("Apple < apple:", "Apple" < "apple")  // true (A < a по Unicode)
+}
+```
+
+### Пример 3: Логические операции
+```go
+package main
+
+import "fmt"
+
+func main() {
+    a, b := true, false
+    
+    fmt.Println("true && false:", a && b)   // false
+    fmt.Println("true || false:", a || b)   // true
+    fmt.Println("!true:", !a)               // false
+    fmt.Println("!false:", !b)              // true
+    
+    // Комбинации
+    fmt.Println("!(true && false):", !(a && b))  // true
+    fmt.Println("!true || !false:", !a || !b)    // true
+}
+```
+
+### Пример 4: Комбинация сравнений и логики
+```go
+package main
+
+import "fmt"
+
+func main() {
+    age := 25
+    hasLicense := true
+    
+    // Можно ли водить машину?
+    canDrive := age >= 18 && hasLicense
+    fmt.Println("Может водить:", canDrive)  // true
+    
+    // Проверка диапазона
+    score := 75
+    isPass := score >= 60 && score <= 100
+    fmt.Println("Зачёт:", isPass)  // true
+    
+    // Проверка на выходной
+    day := "Saturday"
+    isWeekend := day == "Saturday" || day == "Sunday"
+    fmt.Println("Выходной:", isWeekend)  // true
+}
+```
+
+### Пример 5: Таблицы истинности
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("=== Таблица AND (&&) ===")
+    fmt.Println("true  && true  =", true && true)
+    fmt.Println("true  && false =", true && false)
+    fmt.Println("false && true  =", false && true)
+    fmt.Println("false && false =", false && false)
+    
+    fmt.Println("\n=== Таблица OR (||) ===")
+    fmt.Println("true  || true  =", true || true)
+    fmt.Println("true  || false =", true || false)
+    fmt.Println("false || true  =", false || true)
+    fmt.Println("false || false =", false || false)
+    
+    fmt.Println("\n=== Таблица NOT (!) ===")
+    fmt.Println("!true  =", !true)
+    fmt.Println("!false =", !false)
+}
+```
+
+### Пример 6: Короткое замыкание (Short-circuit evaluation)
+```go
+package main
+
+import "fmt"
+
+func check() bool {
+    fmt.Println("check() вызван!")
+    return true
+}
+
+func main() {
+    // && — если левая часть false, правая не вычисляется
+    fmt.Println("=== false && check() ===")
+    result := false && check()  // check() НЕ вызывается
+    fmt.Println("Результат:", result)
+    
+    // || — если левая часть true, правая не вычисляется
+    fmt.Println("\n=== true || check() ===")
+    result = true || check()  // check() НЕ вызывается
+    fmt.Println("Результат:", result)
+    
+    // Когда вычисляется:
+    fmt.Println("\n=== true && check() ===")
+    result = true && check()  // check() вызывается
+    fmt.Println("Результат:", result)
+}
+```
+
+### Пример 7: Приоритет операций
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Приоритет: ! > && > ||
+    
+    a, b, c := true, false, true
+    
+    // Без скобок
+    result1 := a || b && c      // a || (b && c) = true || false = true
+    result2 := !a || b          // (!a) || b = false || false = false
+    result3 := !(a || b)        // !(true || false) = !true = false
+    
+    fmt.Println("a || b && c:", result1)  // true
+    fmt.Println("!a || b:", result2)      // false
+    fmt.Println("!(a || b):", result3)    // false
+    
+    // Рекомендация: используйте скобки для ясности!
+    clear := (a || b) && c
+    fmt.Println("(a || b) && c:", clear)  // true
+}
+```
+
+### Пример 8: Практические примеры
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Валидация пароля
+    password := "secret123"
+    isValidLength := len(password) >= 8
+    hasDigit := false
+    for _, ch := range password {
+        if ch >= '0' && ch <= '9' {
+            hasDigit = true
+            break
+        }
+    }
+    isValidPassword := isValidLength && hasDigit
+    fmt.Println("Пароль валиден:", isValidPassword)
+    
+    // Проверка високосного года
+    year := 2024
+    isLeap := (year%4 == 0 && year%100 != 0) || (year%400 == 0)
+    fmt.Printf("%d — високосный: %t\n", year, isLeap)
+    
+    // Проверка треугольника
+    a, b, c := 3, 4, 5
+    isTriangle := a+b > c && a+c > b && b+c > a
+    fmt.Printf("Стороны %d, %d, %d образуют треугольник: %t\n", 
+               a, b, c, isTriangle)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Путаница = и ==
+```go
+// ❌ Неправильно — присваивание вместо сравнения
+x := 5
+if x = 10 {  // syntax error (в Go это не скомпилируется!)
+    fmt.Println("x равен 10")
+}
+
+// ✅ Правильно
+if x == 10 {
+    fmt.Println("x равен 10")
+}
+```
+
+### 2. Сравнение float с ==
+```go
+// ❌ Опасно — float может иметь погрешность
+a := 0.1 + 0.2
+if a == 0.3 {  // может быть false!
+    fmt.Println("Равно")
+}
+
+// ✅ Правильно — сравнение с допуском
+import "math"
+epsilon := 0.0000001
+if math.Abs(a - 0.3) < epsilon {
+    fmt.Println("Примерно равно")
+}
+```
+
+### 3. Лишние сравнения с bool
+```go
+// ❌ Неправильно — избыточно
+isActive := true
+if isActive == true {
+    // ...
+}
+
+// ✅ Правильно — bool уже содержит ответ
+if isActive {
+    // ...
+}
+
+// ❌ Неправильно
+if isActive == false {
+    // ...
+}
+
+// ✅ Правильно
+if !isActive {
+    // ...
+}
+```
+
+### 4. Неправильный порядок в диапазоне
+```go
+// ❌ Неправильно — всегда false
+x := 50
+if x > 100 && x < 0 {  // число не может быть > 100 И < 0
+    fmt.Println("В диапазоне")
+}
+
+// ✅ Правильно
+if x >= 0 && x <= 100 {
+    fmt.Println("В диапазоне [0, 100]")
+}
+```
+
+### 5. Забыли про short-circuit
+```go
+// ❌ Потенциальная паника
+var data []int
+if len(data) > 0 && data[0] == 1 {  // OK — если len == 0, data[0] не выполнится
+    // ...
+}
+
+// ❌ Неправильный порядок — паника!
+if data[0] == 1 && len(data) > 0 {  // panic: index out of range
+    // ...
+}
+
+// ✅ Правильно — сначала проверяем существование
+if len(data) > 0 && data[0] == 1 {
+    // безопасно
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Операторы сравнения</Title>
+<Prompt>
+Продемонстрируйте все операторы сравнения: ==, !=, <, >, <=, >= на примере двух чисел.
+</Prompt>
+<Hints>
+- Результат сравнения — всегда bool
+- == проверяет равенство, != неравенство
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    a, b := 10, 20
+    fmt.Printf("a = %d, b = %d\n", a, b)
+    // Выведите результаты всех сравнений
+}
+```
+</StarterCode>
+<ExpectedOutput>
+a = 10, b = 20
+a == b: false
+a != b: true
+a < b: true
+a > b: false
+a <= b: true
+a >= b: false
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Логическое И (&&)</Title>
+<Prompt>
+Создайте программу проверки, находится ли число в заданном диапазоне [10, 50] включительно.
+</Prompt>
+<Hints>
+- `&&` возвращает true только если оба операнда true
+- Диапазон [10, 50] включает границы
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    num := 25
+    min, max := 10, 50
+    // Проверьте диапазон
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Проверяем число 25 на диапазон [10, 50]
+25 >= 10: true
+25 <= 50: true
+В диапазоне: true
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Логическое ИЛИ (||)</Title>
+<Prompt>
+Проверьте, является ли символ гласной буквой (a, e, i, o, u) используя логическое ИЛИ.
+</Prompt>
+<Hints>
+- `||` возвращает true если хотя бы один операнд true
+- Символ сравнивается через == с каждой гласной
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := byte('e')
+    fmt.Printf("Проверяем символ: %q\n", ch)
+    // Проверьте все гласные
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Проверяем символ: 'e'
+e == 'a': false
+e == 'e': true
+e == 'i': false
+e == 'o': false
+e == 'u': false
+Гласная: true
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Логическое НЕ (!)</Title>
+<Prompt>
+Продемонстрируйте работу оператора отрицания (!) и двойного отрицания (!!).
+</Prompt>
+<Hints>
+- `!` инвертирует логическое значение
+- `!!` возвращает исходное значение (double negation)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    isActive := true
+    isEmpty := false
+    // Покажите работу !
+}
+```
+</StarterCode>
+<ExpectedOutput>
+isActive = true
+!isActive = false
+!!isActive = true
+
+isEmpty = false
+!isEmpty = true
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Комплексные условия</Title>
+<Prompt>
+Создайте проверку права на скидку: возраст >= 60 ИЛИ (студент И покупка >= 1000).
+</Prompt>
+<Hints>
+- Условие: age >= 60 || (isStudent && purchase >= 1000)
+- Скобки важны для приоритета
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    age := 25
+    isStudent := true
+    purchase := 1500
+    // Проверьте комплексное условие
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Покупатель: возраст=25, студент=true, покупка=1500
+Условие 1 (возраст >= 60): false
+Условие 2 (студент И покупка >= 1000): true
+Право на скидку: true
+</ExpectedOutput>
+</Task>

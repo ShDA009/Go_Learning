@@ -1,0 +1,571 @@
+# Создание и открытие файлов
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **os.File** — тип для работы с файлами, реализует Reader и Writer
+2. **os.Create** — создаёт файл (перезаписывает существующий)
+3. **os.Open** — открывает файл только для чтения
+4. **os.OpenFile** — открывает файл с указанием режима и прав
+5. **defer file.Close()** — обязательно закрывать файл
+6. **Права доступа** — числовой режим (0644, 0755, etc.)
+</Overview>
+
+<Theory>
+### os.File — центральный тип
+
+`*os.File` — это "ручка" (handle) к файлу. Реализует:
+- `io.Reader` — можно читать
+- `io.Writer` — можно писать
+- `io.Closer` — нужно закрывать
+
+### Три способа открыть файл
+
+**1. os.Create** — создать/перезаписать:
+```go
+file, err := os.Create("new.txt")
+// Создаёт если нет, ПЕРЕЗАПИСЫВАЕТ если есть
+// Права: 0666 (rw-rw-rw-)
+```
+
+**2. os.Open** — только чтение:
+```go
+file, err := os.Open("existing.txt")
+// Только чтение, файл должен существовать
+```
+
+**3. os.OpenFile** — полный контроль:
+```go
+file, err := os.OpenFile("file.txt", flags, perm)
+// Вы указываете режим и права
+```
+
+### Флаги открытия
+
+```go
+os.O_RDONLY  // только чтение
+os.O_WRONLY  // только запись
+os.O_RDWR    // чтение и запись
+os.O_CREATE  // создать если нет
+os.O_APPEND  // дописывать в конец
+os.O_TRUNC   // очистить файл
+os.O_EXCL    // ошибка если файл существует
+```
+
+**Комбинируйте с `|`:**
+```go
+os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+```
+
+### Права доступа (Unix)
+
+```
+0644 = rw-r--r--  (файлы — обычно)
+0755 = rwxr-xr-x  (исполняемые)
+0600 = rw-------  (приватные)
+```
+
+На Windows права игнорируются.
+
+### ВСЕГДА закрывайте файлы!
+
+```go
+file, err := os.Open("file.txt")
+if err != nil {
+    return err
+}
+defer file.Close()  // Обязательно!
+```
+
+Незакрытые файлы:
+- Утечка ресурсов (file descriptors)
+- Данные могут не записаться
+- Файл заблокирован
+
+### Проверка существования
+
+```go
+_, err := os.Stat("file.txt")
+if os.IsNotExist(err) {
+    // Файл не существует
+}
+```
+
+---
+
+### Открытие с флагами
+
+```go
+file, err := os.OpenFile(
+    "filename.txt",
+    os.O_RDWR|os.O_CREATE|os.O_APPEND,
+    0644,
+)
+```
+
+### Флаги открытия
+
+```go
+os.O_RDONLY  // только чтение
+os.O_WRONLY  // только запись
+os.O_RDWR    // чтение и запись
+os.O_CREATE  // создать если не существует
+os.O_APPEND  // добавлять в конец
+os.O_TRUNC   // очистить при открытии
+os.O_EXCL    // ошибка если существует (с O_CREATE)
+```
+</Theory>
+
+<Syntax>
+### Создание файла
+
+```go
+file, err := os.Create("filename.txt")
+if err != nil {
+    // обработка ошибки
+}
+defer file.Close()
+```
+
+### Открытие для чтения
+
+```go
+file, err := os.Open("filename.txt")
+if err != nil {
+    // обработка ошибки
+}
+defer file.Close()
+```
+
+### Открытие с флагами
+
+```go
+</Syntax>
+
+<Examples>
+кода
+
+### Создание файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Create("hello.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    fmt.Println("File created:", file.Name())
+    
+    // Информация о файле
+    info, _ := file.Stat()
+    fmt.Println("Size:", info.Size())
+    fmt.Println("Mode:", info.Mode())
+}
+```
+
+### Открытие существующего файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Open("hello.txt")
+    if err != nil {
+        if os.IsNotExist(err) {
+            fmt.Println("File does not exist!")
+        } else {
+            fmt.Println("Error:", err)
+        }
+        return
+    }
+    defer file.Close()
+    
+    fmt.Println("File opened:", file.Name())
+}
+```
+
+### OpenFile с разными режимами
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Только чтение
+    readOnly, err := os.OpenFile("data.txt", os.O_RDONLY, 0)
+    if err == nil {
+        defer readOnly.Close()
+        fmt.Println("Opened for reading")
+    }
+    
+    // Только запись (создаёт если нет)
+    writeOnly, err := os.OpenFile("output.txt", 
+        os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+    if err == nil {
+        defer writeOnly.Close()
+        fmt.Println("Opened for writing")
+    }
+    
+    // Добавление в конец
+    appendFile, err := os.OpenFile("log.txt",
+        os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err == nil {
+        defer appendFile.Close()
+        fmt.Println("Opened for appending")
+    }
+    
+    // Чтение и запись
+    readWrite, err := os.OpenFile("data.txt",
+        os.O_RDWR|os.O_CREATE, 0644)
+    if err == nil {
+        defer readWrite.Close()
+        fmt.Println("Opened for read/write")
+    }
+}
+```
+
+### Права доступа (Unix)
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // 0644 = rw-r--r--
+    // Владелец: чтение + запись
+    // Группа: только чтение
+    // Остальные: только чтение
+    
+    file1, _ := os.OpenFile("normal.txt", 
+        os.O_CREATE|os.O_WRONLY, 0644)
+    defer file1.Close()
+    
+    // 0755 = rwxr-xr-x (для исполняемых файлов)
+    file2, _ := os.OpenFile("script.sh",
+        os.O_CREATE|os.O_WRONLY, 0755)
+    defer file2.Close()
+    
+    // 0600 = rw------- (только владелец)
+    file3, _ := os.OpenFile("secret.txt",
+        os.O_CREATE|os.O_WRONLY, 0600)
+    defer file3.Close()
+    
+    fmt.Println("Files created with different permissions")
+}
+```
+
+### Проверка существования файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func fileExists(filename string) bool {
+    _, err := os.Stat(filename)
+    return !os.IsNotExist(err)
+}
+
+func main() {
+    files := []string{"existing.txt", "missing.txt", "."}
+    
+    for _, f := range files {
+        if fileExists(f) {
+            fmt.Printf("%s exists\n", f)
+        } else {
+            fmt.Printf("%s does not exist\n", f)
+        }
+    }
+}
+```
+
+### Информация о файле
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    info, err := os.Stat("hello.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    
+    fmt.Println("Name:", info.Name())
+    fmt.Println("Size:", info.Size(), "bytes")
+    fmt.Println("Mode:", info.Mode())
+    fmt.Println("ModTime:", info.ModTime())
+    fmt.Println("IsDir:", info.IsDir())
+}
+```
+
+### Временный файл
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Создаём временный файл
+    tmpFile, err := os.CreateTemp("", "example-*.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer os.Remove(tmpFile.Name())  // Удаляем после использования
+    defer tmpFile.Close()
+    
+    fmt.Println("Temp file:", tmpFile.Name())
+    
+    // Записываем данные
+    tmpFile.WriteString("Temporary data")
+}
+```
+
+### Практический пример: безопасное создание файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func createFileSafe(filename string, overwrite bool) (*os.File, error) {
+    if !overwrite {
+        // Проверяем, существует ли файл
+        if _, err := os.Stat(filename); err == nil {
+            return nil, fmt.Errorf("file %s already exists", filename)
+        }
+    }
+    
+    file, err := os.Create(filename)
+    if err != nil {
+        return nil, fmt.Errorf("cannot create file: %w", err)
+    }
+    
+    return file, nil
+}
+
+func main() {
+    // Создаём файл, не перезаписывая
+    file, err := createFileSafe("data.txt", false)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    file.WriteString("Hello, World!")
+    fmt.Println("File created successfully")
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли закрыть файл
+
+```go
+// ❌ Утечка ресурсов
+file, _ := os.Open("data.txt")
+// работа с файлом...
+// file.Close() — забыли!
+
+// ✅ Используйте defer
+file, err := os.Open("data.txt")
+if err != nil {
+    return err
+}
+defer file.Close()
+```
+
+### 2. defer перед проверкой ошибки
+
+```go
+// ❌ PANIC если file == nil
+file, err := os.Open("data.txt")
+defer file.Close()  // defer выполнится даже при ошибке!
+if err != nil {
+    return err
+}
+
+// ✅ defer после проверки
+file, err := os.Open("data.txt")
+if err != nil {
+    return err
+}
+defer file.Close()
+```
+
+### 3. Неправильные права доступа
+
+```go
+// ❌ Слишком открытые права
+os.OpenFile("secret.txt", os.O_CREATE, 0777)
+
+// ✅ Ограничьте права
+os.OpenFile("secret.txt", os.O_CREATE, 0600)
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: ResponseWriter интерфейс</Title>
+<Prompt>
+Изучите методы ResponseWriter.
+</Prompt>
+<Hints>
+- Порядок важен: Header -> WriteHeader -> Write
+- Нельзя изменить заголовки после Write
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("ResponseWriter: Header(), Write(), WriteHeader()")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+ResponseWriter: Header(), Write(), WriteHeader()
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Установка заголовков ответа</Title>
+<Prompt>
+Добавьте кастомные заголовки.
+</Prompt>
+<Hints>
+- w.Header().Set("Content-Type", "text/html")
+- Вызывать до WriteHeader/Write
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Заголовки: w.Header().Set(\"X-Custom\", \"value\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Заголовки: w.Header().Set("X-Custom", "value")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Редирект</Title>
+<Prompt>
+Перенаправьте на другой URL.
+</Prompt>
+<Hints>
+- http.Redirect(w, r, "/new", http.StatusFound)
+- 301 — постоянный, 302 — временный
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Редирект: http.Redirect(w, r, url, code)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Редирект: http.Redirect(w, r, url, code)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Отдача файла</Title>
+<Prompt>
+Отправьте файл клиенту.
+</Prompt>
+<Hints>
+- http.ServeFile(w, r, "./static/image.png")
+- Или http.FileServer для директории
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Файл: http.ServeFile(w, r, \"path/to/file\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Файл: http.ServeFile(w, r, "path/to/file")
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: http.Error</Title>
+<Prompt>
+Отправьте ошибку клиенту.
+</Prompt>
+<Hints>
+- http.Error(w, "Not Found", http.StatusNotFound)
+- Для JSON ошибок — свой формат
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Ошибка: http.Error(w, \"message\", 404)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: http.Error(w, "message", 404)
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,671 @@
+# Циклы
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+- В Go есть **только один** цикл — `for`, но он очень гибкий
+- `for` может работать как `while` (только условие)
+- `for range` — для перебора коллекций (массивы, срезы, карты, строки)
+- `break` — выход из цикла, `continue` — переход к следующей итерации
+- Метки позволяют выходить из **вложенных** циклов
+
+### Формы цикла for
+
+| Форма | Аналог в других языках |
+|-------|------------------------|
+| `for i := 0; i < n; i++` | классический for |
+| `for условие` | while |
+| `for` | бесконечный цикл |
+| `for i, v := range коллекция` | foreach |
+</Overview>
+
+<Theory>
+### Почему в Go только один цикл?
+
+В других языках есть `for`, `while`, `do-while`, `foreach`. В Go — только `for`, но он настолько гибкий, что заменяет все остальные.
+
+Это философия Go: меньше конструкций → проще язык → легче читать код.
+
+### Анатомия классического for
+
+```go
+for i := 0; i < 10; i++ {
+    //      ↑      ↑      ↑
+    //   init   cond   post
+}
+```
+
+- **init** — выполняется один раз перед началом
+- **cond** — проверяется перед каждой итерацией
+- **post** — выполняется после каждой итерации
+
+### Цикл как while
+
+Если убрать init и post, получим аналог `while`:
+
+```go
+for condition {
+    // пока condition == true
+}
+```
+
+Пример:
+```go
+count := 0
+for count < 5 {
+    fmt.Println(count)
+    count++
+}
+```
+
+### Бесконечный цикл
+
+Если убрать всё, получим бесконечный цикл:
+
+```go
+for {
+    // выполняется вечно
+    // пока не встретит break или return
+}
+```
+
+Используется для серверов, игровых циклов, обработки событий.
+
+### for range — перебор коллекций
+
+`for range` — идиоматический способ перебора в Go:
+
+```go
+// Массив/срез
+for index, value := range slice {
+    fmt.Printf("[%d] = %v\n", index, value)
+}
+
+// Только значения
+for _, value := range slice {
+    fmt.Println(value)
+}
+
+// Только индексы
+for index := range slice {
+    fmt.Println(index)
+}
+
+// Map
+for key, value := range myMap {
+    fmt.Printf("%s: %v\n", key, value)
+}
+
+// Строка (по рунам!)
+for i, char := range "Hello" {
+    fmt.Printf("%d: %c\n", i, char)
+}
+```
+
+### break и continue
+
+**break** — немедленный выход из цикла:
+```go
+for i := 0; i < 100; i++ {
+    if i == 5 {
+        break  // выходим при i == 5
+    }
+    fmt.Println(i)
+}
+```
+
+**continue** — переход к следующей итерации:
+```go
+for i := 0; i < 10; i++ {
+    if i % 2 == 0 {
+        continue  // пропускаем чётные
+    }
+    fmt.Println(i)  // выведет: 1, 3, 5, 7, 9
+}
+```
+
+### Метки для вложенных циклов
+
+Метки позволяют выйти из внешнего цикла изнутри внутреннего:
+
+```go
+outer:
+for i := 0; i < 3; i++ {
+    for j := 0; j < 3; j++ {
+        if i == 1 && j == 1 {
+            break outer  // выход из ВНЕШНЕГО цикла
+        }
+    }
+}
+```
+
+Без метки `break` вышел бы только из внутреннего цикла.
+</Theory>
+
+<Syntax>
+### Классический for
+```go
+for инициализация; условие; изменение {
+    // тело цикла
+}
+```
+
+### Цикл while (только условие)
+```go
+for условие {
+    // тело цикла
+}
+```
+
+### Бесконечный цикл
+```go
+for {
+    // тело цикла
+    // выход через break
+}
+```
+
+### For range
+```go
+for индекс, значение := range коллекция {
+    // тело цикла
+}
+
+for индекс := range коллекция {
+    // только индекс
+}
+
+for _, значение := range коллекция {
+    // только значение
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Классический for
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Вывод чисел от 1 до 5
+    for i := 1; i <= 5; i++ {
+        fmt.Println(i)
+    }
+    
+    // Обратный отсчёт
+    fmt.Println("\nОбратный отсчёт:")
+    for i := 5; i > 0; i-- {
+        fmt.Println(i)
+    }
+    fmt.Println("Пуск!")
+}
+```
+
+### Пример 2: Цикл while
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Степени двойки до 1000
+    n := 1
+    for n < 1000 {
+        fmt.Println(n)
+        n *= 2
+    }
+    
+    // Факториал
+    fmt.Println("\nФакториал 5:")
+    fact := 1
+    i := 1
+    for i <= 5 {
+        fact *= i
+        i++
+    }
+    fmt.Println("5! =", fact)
+}
+```
+
+### Пример 3: Бесконечный цикл
+```go
+package main
+
+import "fmt"
+
+func main() {
+    sum := 0
+    
+    for {
+        sum++
+        if sum >= 10 {
+            break  // выход из цикла
+        }
+    }
+    
+    fmt.Println("Сумма:", sum)
+}
+```
+
+### Пример 4: For range — массивы и срезы
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fruits := []string{"яблоко", "банан", "вишня"}
+    
+    // Индекс и значение
+    fmt.Println("С индексами:")
+    for i, fruit := range fruits {
+        fmt.Printf("  %d: %s\n", i, fruit)
+    }
+    
+    // Только значения
+    fmt.Println("\nТолько значения:")
+    for _, fruit := range fruits {
+        fmt.Println(" ", fruit)
+    }
+    
+    // Только индексы
+    fmt.Println("\nТолько индексы:")
+    for i := range fruits {
+        fmt.Println(" ", i)
+    }
+}
+```
+
+### Пример 5: For range — строки
+```go
+package main
+
+import "fmt"
+
+func main() {
+    str := "Hello, 世界!"
+    
+    // Перебор по рунам (символам Unicode)
+    fmt.Println("Посимвольно:")
+    for i, char := range str {
+        fmt.Printf("  [%d] %c (код: %d)\n", i, char, char)
+    }
+    
+    // Примечание: индексы — это позиции байтов!
+    // Для кириллицы и других Unicode символов индексы "прыгают"
+}
+```
+
+### Пример 6: For range — карты (maps)
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ages := map[string]int{
+        "Alice": 25,
+        "Bob":   30,
+        "Carol": 28,
+    }
+    
+    fmt.Println("Возрасты:")
+    for name, age := range ages {
+        fmt.Printf("  %s: %d лет\n", name, age)
+    }
+    
+    // Только ключи
+    fmt.Println("\nТолько имена:")
+    for name := range ages {
+        fmt.Println(" ", name)
+    }
+}
+```
+
+### Пример 7: break и continue
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // continue — пропуск итерации
+    fmt.Println("Только нечётные (continue):")
+    for i := 1; i <= 10; i++ {
+        if i%2 == 0 {
+            continue  // пропускаем чётные
+        }
+        fmt.Print(i, " ")
+    }
+    
+    // break — выход из цикла
+    fmt.Println("\n\nДо первого отрицательного (break):")
+    nums := []int{3, 7, 2, -1, 5, 8}
+    sum := 0
+    for _, n := range nums {
+        if n < 0 {
+            break  // выходим при отрицательном
+        }
+        sum += n
+    }
+    fmt.Println("Сумма:", sum)  // 3 + 7 + 2 = 12
+}
+```
+
+### Пример 8: Вложенные циклы и метки
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Таблица умножения
+    fmt.Println("Таблица умножения:")
+    for i := 1; i <= 5; i++ {
+        for j := 1; j <= 5; j++ {
+            fmt.Printf("%3d", i*j)
+        }
+        fmt.Println()
+    }
+    
+    // Выход из вложенного цикла с меткой
+    fmt.Println("\nПоиск элемента в матрице:")
+    matrix := [3][3]int{
+        {1, 2, 3},
+        {4, 5, 6},
+        {7, 8, 9},
+    }
+    target := 5
+    
+OuterLoop:
+    for i, row := range matrix {
+        for j, val := range row {
+            if val == target {
+                fmt.Printf("Найдено %d на позиции [%d][%d]\n", target, i, j)
+                break OuterLoop  // выход из обоих циклов
+            }
+        }
+    }
+}
+```
+
+### Пример 9: Практические примеры
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Сумма чисел от 1 до 100
+    sum := 0
+    for i := 1; i <= 100; i++ {
+        sum += i
+    }
+    fmt.Println("Сумма 1-100:", sum)  // 5050
+    
+    // Числа Фибоначчи
+    fmt.Println("\nФибоначчи до 100:")
+    a, b := 0, 1
+    for a <= 100 {
+        fmt.Print(a, " ")
+        a, b = b, a+b
+    }
+    
+    // Простые числа до 50
+    fmt.Println("\n\nПростые числа до 50:")
+    for n := 2; n <= 50; n++ {
+        isPrime := true
+        for d := 2; d*d <= n; d++ {
+            if n%d == 0 {
+                isPrime = false
+                break
+            }
+        }
+        if isPrime {
+            fmt.Print(n, " ")
+        }
+    }
+    fmt.Println()
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Бесконечный цикл по ошибке
+```go
+// ❌ Забыли изменить счётчик
+i := 0
+for i < 10 {
+    fmt.Println(i)
+    // i++ забыли!
+}
+
+// ✅ Правильно
+i := 0
+for i < 10 {
+    fmt.Println(i)
+    i++
+}
+```
+
+### 2. Изменение коллекции в range
+```go
+// ❌ Опасно — изменение среза во время итерации
+nums := []int{1, 2, 3, 4, 5}
+for i, v := range nums {
+    nums = append(nums, v*2)  // бесконечный цикл!
+}
+
+// ✅ Безопасно — итерация по копии или фиксированному размеру
+length := len(nums)
+for i := 0; i < length; i++ {
+    nums = append(nums, nums[i]*2)
+}
+```
+
+### 3. Неиспользуемая переменная в range
+```go
+// ❌ Неправильно — Go требует использовать все переменные
+for i, v := range nums {
+    fmt.Println(v)  // i не используется
+}
+
+// ✅ Правильно — используйте _
+for _, v := range nums {
+    fmt.Println(v)
+}
+```
+
+### 4. Захват переменной цикла в горутине
+```go
+// ❌ Неправильно — все горутины получат последнее значение
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // скорее всего выведет 3, 3, 3
+    }()
+}
+
+// ✅ Правильно — передать как параметр
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        fmt.Println(n)
+    }(i)
+}
+```
+
+### 5. break выходит только из внутреннего цикла
+```go
+// ❌ break выйдет только из внутреннего for
+for i := 0; i < 3; i++ {
+    for j := 0; j < 3; j++ {
+        if condition {
+            break  // выход только из внутреннего
+        }
+    }
+    // внешний продолжится
+}
+
+// ✅ Используйте метку для выхода из внешнего
+OuterLoop:
+for i := 0; i < 3; i++ {
+    for j := 0; j < 3; j++ {
+        if condition {
+            break OuterLoop
+        }
+    }
+}
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Цикл for классический</Title>
+<Prompt>
+Выведите числа от 1 до 5 используя классический цикл for с тремя компонентами.
+</Prompt>
+<Hints>
+- Синтаксис: `for i := 1; i <= 5; i++ { ... }`
+- Все три части разделены точкой с запятой
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Счёт от 1 до 5:")
+    // Создайте цикл for
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Счёт от 1 до 5:
+1
+2
+3
+4
+5
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Цикл for как while</Title>
+<Prompt>
+Создайте обратный отсчёт от 5 до 1 используя for только с условием (как while).
+</Prompt>
+<Hints>
+- Синтаксис: `for n > 0 { ... }`
+- В Go нет отдельного while
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    n := 5
+    fmt.Println("Обратный отсчёт:")
+    // Создайте цикл while-style
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Обратный отсчёт:
+5
+4
+3
+2
+1
+Пуск!
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: break для выхода из цикла</Title>
+<Prompt>
+Найдите первое число, делящееся на 7, в диапазоне от 50 до 100 и прервите цикл.
+</Prompt>
+<Hints>
+- Проверка: `num % 7 == 0`
+- break немедленно выходит из цикла
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Поиск числа, делящегося на 7, в диапазоне 50-100...")
+    // Найдите первое число
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Поиск числа, делящегося на 7, в диапазоне 50-100...
+Найдено: 56
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: continue для пропуска итерации</Title>
+<Prompt>
+Выведите числа от 1 до 10, пропуская числа, кратные 3.
+</Prompt>
+<Hints>
+- `if n % 3 == 0 { continue }`
+- continue переходит к следующей итерации
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Числа 1-10 (без кратных 3):")
+    // Выведите числа, пропуская кратные 3
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Числа 1-10 (без кратных 3):
+1 2 4 5 7 8 10
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Вложенные циклы: таблица умножения</Title>
+<Prompt>
+Выведите таблицу умножения 3x3 (от 1×1 до 3×3).
+</Prompt>
+<Hints>
+- Используйте `\t` для табуляции
+- `Println` в конце каждой строки
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Таблица умножения 3x3:")
+    // Создайте вложенные циклы
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Таблица умножения 3x3:
+1*1=1	1*2=2	1*3=3
+2*1=2	2*2=4	2*3=6
+3*1=3	3*2=6	3*3=9
+</ExpectedOutput>
+</Task>

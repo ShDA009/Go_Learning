@@ -79,19 +79,45 @@
                     <h2>📝 Практика</h2>
                     
                     {{range .Lesson.Tasks}}
-                    <div class="task-card" data-task-id="{{.ID}}">
+                    <div class="task-card" data-task-id="{{.ID}}" {{if index $.CompletedTasks .ID}}data-completed="true"{{end}}>
                         <div class="task-header">
                             <h3>{{.Title}}</h3>
+                            {{if index $.CompletedTasks .ID}}
+                            <span class="task-points completed">✅ Выполнено</span>
+                            {{else}}
                             <span class="task-points">{{.Points}} очков</span>
+                            {{end}}
                         </div>
                         
                         <div class="task-prompt markdown">
                             {{.PromptMD | markdown}}
                         </div>
                         
+                        {{if .Criteria}}
+                        <div class="task-criteria">
+                            <h4>✅ Критерии приёмки:</h4>
+                            <div class="markdown">{{.Criteria | markdown}}</div>
+                        </div>
+                        {{end}}
+                        
+                        {{if .Hints}}
+                        <details class="task-hints">
+                            <summary>💡 Подсказки</summary>
+                            <div class="markdown">{{.Hints | markdown}}</div>
+                        </details>
+                        {{end}}
+                        
                         <div class="code-editor">
+                            <h4>📝 Начальный код:</h4>
                             <textarea class="code-input" placeholder="Введите ваш код здесь...">{{.StarterCode}}</textarea>
                         </div>
+                        
+                        {{if .ExpectedOutput}}
+                        <details class="task-expected">
+                            <summary>🎯 Ожидаемый вывод</summary>
+                            <pre class="expected-output">{{.ExpectedOutput}}</pre>
+                        </details>
+                        {{end}}
                         
                         <div class="task-actions">
                             <button class="btn btn-secondary run-btn">▶ Запустить</button>

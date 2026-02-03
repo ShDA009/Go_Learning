@@ -1,0 +1,663 @@
+# Взаимодействие клиента и сервера
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **Двусторонняя связь** — клиент и сервер обмениваются данными
+2. **Протокол** — договорённость о формате сообщений
+3. **Буферизация** — чтение данных порциями
+4. **Постоянное соединение** — несколько запросов через одно соединение
+5. **Горутины** — параллельная обработка клиентов на сервере
+</Overview>
+
+<Theory>
+### Проблема: где заканчивается сообщение?
+
+TCP — это **поток байтов**, не поток сообщений. Если клиент отправил "Hello" и "World", сервер может получить:
+- `"HelloWorld"` — всё вместе
+- `"Hel"` + `"loWorld"` — по частям
+- `"Hello"` + `"World"` — как ожидали (повезло)
+
+### Протокол — ваш контракт
+
+**Протокол** определяет:
+- Формат сообщений
+- Порядок обмена
+- Как определить конец сообщения
+
+### Способы определения границ
+
+**1. Разделитель:**
+```go
+// Сообщения разделены \n
+"message1\nmessage2\nmessage3\n"
+
+// Читаем построчно
+reader := bufio.NewReader(conn)
+for {
+    line, err := reader.ReadString('\n')
+    if err != nil {
+        break
+    }
+    process(line)
+}
+```
+
+**2. Префикс длины:**
+```go
+// 4 байта длины + данные
+func send(conn net.Conn, data []byte) {
+    length := make([]byte, 4)
+    binary.BigEndian.PutUint32(length, uint32(len(data)))
+    conn.Write(length)
+    conn.Write(data)
+}
+
+func receive(conn net.Conn) []byte {
+    length := make([]byte, 4)
+    io.ReadFull(conn, length)
+    size := binary.BigEndian.Uint32(length)
+    data := make([]byte, size)
+    io.ReadFull(conn, data)
+    return data
+}
+```
+
+**3. Фиксированный размер:**
+```go
+// Все сообщения по 100 байт
+buf := make([]byte, 100)
+io.ReadFull(conn, buf)
+```
+
+### Паттерн: текстовый протокол
+
+```go
+// Сервер
+reader := bufio.NewReader(conn)
+writer := bufio.NewWriter(conn)
+
+for {
+    // Читаем команду
+    cmd, _ := reader.ReadString('\n')
+    cmd = strings.TrimSpace(cmd)
+    
+    // Обрабатываем
+    var response string
+    switch cmd {
+    case "PING":
+        response = "PONG"
+    case "TIME":
+        response = time.Now().String()
+    default:
+        response = "ERROR: unknown command"
+    }
+    
+    // Отвечаем
+    writer.WriteString(response + "\n")
+    writer.Flush()
+}
+```
+
+### Постоянные соединения (Keep-Alive)
+
+Одно соединение — много запросов:
+```go
+func handleClient(conn net.Conn) {
+    defer conn.Close()
+    reader := bufio.NewReader(conn)
+    
+    for {  // цикл обработки запросов
+        request, err := reader.ReadString('\n')
+        if err != nil {
+            return  // клиент отключился
+        }
+        
+        response := process(request)
+        conn.Write([]byte(response + "\n"))
+    }
+}
+```
+
+### Чтение всех данных
+
+Для `io.ReadFull` и `io.ReadAll`:
+```go
+// Точно 100 байт (или ошибка)
+buf := make([]byte, 100)
+_, err := io.ReadFull(conn, buf)
+
+// Читать до закрытия соединения
+data, err := io.ReadAll(conn)
+```
+</Theory>
+
+<Syntax>
+### Паттерн взаимодействия
+
+```
+Клиент                    Сервер
+   |                         |
+   |---- Dial() ------------>|
+   |                  Accept()|
+   |                         |
+   |---- Write() ----------->|
+   |                   Read()|
+   |                         |
+   |<--- Write() ------------|
+   | Read()                  |
+   |                         |
+   |---- Close() ----------->|
+   |                  Close()|
+```
+
+### Чтение данных
+
+```go
+// Фиксированный буфер
+buffer := make([]byte, 1024)
+n, err := conn.Read(buffer)
+data := buffer[:n]
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Полный пример: Сервер-словарь
+
+```go
+// server.go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "net"
+    "strings"
+)
+
+var dictionary = map[string]string{
+    "hello":   "привет",
+    "world":   "мир",
+    "goodbye": "до свидания",
+    "thanks":  "спасибо",
+    "please":  "пожалуйста",
+}
+
+func handleClient(conn net.Conn) {
+    defer conn.Close()
+    
+    reader := bufio.NewReader(conn)
+    clientAddr := conn.RemoteAddr().String()
+    fmt.Printf("Client connected: %s\n", clientAddr)
+    
+    for {
+        // Читаем запрос
+        word, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Printf("Client %s disconnected\n", clientAddr)
+            return
+        }
+        
+        word = strings.TrimSpace(word)
+        if word == "quit" {
+            conn.Write([]byte("Goodbye!\n"))
+            return
+        }
+        
+        // Ищем перевод
+        translation, found := dictionary[strings.ToLower(word)]
+        if !found {
+            translation = "не найдено"
+        }
+        
+        // Отправляем ответ
+        response := fmt.Sprintf("%s\n", translation)
+        conn.Write([]byte(response))
+        
+        fmt.Printf("[%s] %s -> %s\n", clientAddr, word, translation)
+    }
+}
+
+func main() {
+    listener, err := net.Listen("tcp", ":4545")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer listener.Close()
+    
+    fmt.Println("Dictionary server started on :4545")
+    
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            continue
+        }
+        go handleClient(conn)
+    }
+}
+```
+
+### Клиент для словаря
+
+```go
+// client.go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "net"
+    "os"
+    "strings"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "127.0.0.1:4545")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    reader := bufio.NewReader(conn)
+    scanner := bufio.NewScanner(os.Stdin)
+    
+    fmt.Println("Dictionary client (type 'quit' to exit)")
+    
+    for {
+        fmt.Print("Enter word: ")
+        if !scanner.Scan() {
+            break
+        }
+        
+        word := strings.TrimSpace(scanner.Text())
+        if word == "" {
+            continue
+        }
+        
+        // Отправляем слово серверу
+        conn.Write([]byte(word + "\n"))
+        
+        // Получаем ответ
+        response, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Println("Read error:", err)
+            break
+        }
+        
+        fmt.Printf("Translation: %s", response)
+        
+        if word == "quit" {
+            break
+        }
+    }
+}
+```
+
+### Чат-сервер с broadcast
+
+```go
+// chat_server.go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "net"
+    "strings"
+    "sync"
+)
+
+type ChatServer struct {
+    clients map[net.Conn]string
+    mu      sync.RWMutex
+}
+
+func NewChatServer() *ChatServer {
+    return &ChatServer{
+        clients: make(map[net.Conn]string),
+    }
+}
+
+func (s *ChatServer) broadcast(message string, sender net.Conn) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    
+    for conn := range s.clients {
+        if conn != sender {
+            conn.Write([]byte(message))
+        }
+    }
+}
+
+func (s *ChatServer) addClient(conn net.Conn, name string) {
+    s.mu.Lock()
+    s.clients[conn] = name
+    s.mu.Unlock()
+}
+
+func (s *ChatServer) removeClient(conn net.Conn) {
+    s.mu.Lock()
+    delete(s.clients, conn)
+    s.mu.Unlock()
+}
+
+func (s *ChatServer) handleClient(conn net.Conn) {
+    defer conn.Close()
+    
+    reader := bufio.NewReader(conn)
+    
+    // Запрашиваем имя
+    conn.Write([]byte("Enter your name: "))
+    name, err := reader.ReadString('\n')
+    if err != nil {
+        return
+    }
+    name = strings.TrimSpace(name)
+    
+    s.addClient(conn, name)
+    defer s.removeClient(conn)
+    
+    s.broadcast(fmt.Sprintf("*** %s joined the chat ***\n", name), conn)
+    fmt.Printf("%s connected\n", name)
+    
+    for {
+        message, err := reader.ReadString('\n')
+        if err != nil {
+            break
+        }
+        
+        message = strings.TrimSpace(message)
+        if message == "" {
+            continue
+        }
+        
+        if message == "/quit" {
+            break
+        }
+        
+        s.broadcast(fmt.Sprintf("[%s]: %s\n", name, message), conn)
+    }
+    
+    s.broadcast(fmt.Sprintf("*** %s left the chat ***\n", name), conn)
+    fmt.Printf("%s disconnected\n", name)
+}
+
+func main() {
+    server := NewChatServer()
+    
+    listener, err := net.Listen("tcp", ":4545")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer listener.Close()
+    
+    fmt.Println("Chat server started on :4545")
+    
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            continue
+        }
+        go server.handleClient(conn)
+    }
+}
+```
+
+### Клиент с асинхронным чтением
+
+```go
+// chat_client.go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "net"
+    "os"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "127.0.0.1:4545")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Горутина для чтения сообщений
+    go func() {
+        reader := bufio.NewReader(conn)
+        for {
+            message, err := reader.ReadString('\n')
+            if err != nil {
+                fmt.Println("Disconnected")
+                os.Exit(0)
+            }
+            fmt.Print(message)
+        }
+    }()
+    
+    // Основной цикл для отправки
+    scanner := bufio.NewScanner(os.Stdin)
+    for scanner.Scan() {
+        text := scanner.Text()
+        conn.Write([]byte(text + "\n"))
+        if text == "/quit" {
+            break
+        }
+    }
+}
+```
+
+### Протокол с длиной сообщения
+
+```go
+package main
+
+import (
+    "encoding/binary"
+    "fmt"
+    "net"
+)
+
+// Отправка сообщения с префиксом длины
+func sendMessage(conn net.Conn, message string) error {
+    data := []byte(message)
+    length := uint32(len(data))
+    
+    // Отправляем длину (4 байта)
+    if err := binary.Write(conn, binary.BigEndian, length); err != nil {
+        return err
+    }
+    
+    // Отправляем данные
+    _, err := conn.Write(data)
+    return err
+}
+
+// Получение сообщения с префиксом длины
+func receiveMessage(conn net.Conn) (string, error) {
+    var length uint32
+    
+    // Читаем длину
+    if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
+        return "", err
+    }
+    
+    // Читаем данные
+    data := make([]byte, length)
+    _, err := conn.Read(data)
+    if err != nil {
+        return "", err
+    }
+    
+    return string(data), nil
+}
+
+func main() {
+    // Пример использования
+    conn, _ := net.Dial("tcp", "127.0.0.1:4545")
+    defer conn.Close()
+    
+    sendMessage(conn, "Hello, Server!")
+    response, _ := receiveMessage(conn)
+    fmt.Println("Response:", response)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Взаимная блокировка
+
+```go
+// ❌ Клиент и сервер оба ждут Read
+// Клиент:
+conn.Read(buffer)  // ждёт
+
+// Сервер:
+conn.Read(buffer)  // тоже ждёт
+
+// ✅ Определите протокол: кто первый пишет
+// Обычно: клиент пишет -> сервер отвечает
+```
+
+### 2. Неполное чтение
+
+```go
+// ❌ Read может вернуть меньше данных
+buffer := make([]byte, 1024)
+conn.Read(buffer)  // может вернуть только часть
+
+// ✅ Читайте в цикле или используйте io.ReadFull
+```
+
+### 3. Нет разделителя сообщений
+
+```go
+// ❌ Непонятно, где конец сообщения
+conn.Write([]byte("Hello"))
+conn.Write([]byte("World"))
+// На стороне получателя: "HelloWorld"
+
+// ✅ Используйте разделитель или длину
+conn.Write([]byte("Hello\n"))
+conn.Write([]byte("World\n"))
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: Middleware паттерн</Title>
+<Prompt>
+Создайте middleware функцию.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Middleware: func(next http.Handler) http.Handler")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Middleware: func(next http.Handler) http.Handler
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Logging middleware</Title>
+<Prompt>
+Логируйте все запросы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Logging: log.Printf(\"%s %s\", r.Method, r.URL.Path)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Logging: log.Printf("%s %s", r.Method, r.URL.Path)
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Recovery middleware</Title>
+<Prompt>
+Перехватывайте panic.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Вызовите panic
+// TODO: Реализуйте recover в defer
+// TODO: Используйте defer
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Recovery: defer func() { if r := recover(); r != nil {...} }()
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Auth middleware</Title>
+<Prompt>
+Проверяйте авторизацию.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Auth: if !isAuthenticated(r) { http.Error(...); return }")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Auth: if !isAuthenticated(r) { http.Error(...); return }
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Цепочка middleware</Title>
+<Prompt>
+Соедините несколько middleware.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Цепочка: logging(auth(handler))")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Цепочка: logging(auth(handler))
+</ExpectedOutput>
+</Task>

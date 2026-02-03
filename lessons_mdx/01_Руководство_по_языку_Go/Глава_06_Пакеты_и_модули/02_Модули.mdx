@@ -1,0 +1,557 @@
+# Модули в Go
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **Модуль** — коллекция связанных пакетов с версионированием и управлением зависимостями
+2. **go.mod** — файл конфигурации модуля (имя, версия Go, зависимости)
+3. **go.sum** — файл с контрольными суммами зависимостей для безопасности
+4. **Изоляция зависимостей** — каждый модуль управляет своими зависимостями независимо
+5. **Воспроизводимые сборки** — гарантия одинаковых версий зависимостей
+</Overview>
+
+<Theory>
+### Что такое модуль?
+
+**Модуль** — это коллекция пакетов с версионированием. До модулей (Go 1.11) управление зависимостями было проблемой — весь код должен был лежать в `GOPATH`.
+
+Модули решают:
+- Версионирование зависимостей
+- Воспроизводимые сборки
+- Работа вне GOPATH
+
+### go.mod — сердце модуля
+
+```go
+module github.com/username/project
+
+go 1.22
+
+require (
+    github.com/gin-gonic/gin v1.9.1
+    github.com/lib/pq v1.10.9
+)
+```
+
+- `module` — уникальное имя модуля (обычно путь к репозиторию)
+- `go` — минимальная версия Go
+- `require` — зависимости и их версии
+
+### go.sum — контроль целостности
+
+`go.sum` содержит хеши всех зависимостей:
+
+```
+github.com/gin-gonic/gin v1.9.1 h1:4idEAncQnU5cB7BeOkPtxjf...
+github.com/gin-gonic/gin v1.9.1/go.mod h1:RcXaRaQZz8s...
+```
+
+Если хеш не совпадает — зависимость изменилась (возможно, взломана). Go откажется компилировать.
+
+### Создание модуля
+
+```bash
+mkdir myproject && cd myproject
+go mod init github.com/username/myproject
+```
+
+Создаётся `go.mod`. Теперь можно:
+- Импортировать внешние пакеты
+- Создавать свои пакеты внутри модуля
+
+### Добавление зависимостей
+
+**Автоматически при импорте:**
+```go
+import "github.com/gin-gonic/gin"
+```
+```bash
+go mod tidy  # скачает зависимость
+```
+
+**Вручную:**
+```bash
+go get github.com/gin-gonic/gin
+go get github.com/gin-gonic/gin@v1.9.1  # конкретная версия
+go get github.com/gin-gonic/gin@latest  # последняя
+```
+
+### Семантическое версионирование
+
+Go модули используют SemVer: `v1.2.3`
+- **Major** (1) — несовместимые изменения
+- **Minor** (2) — новые функции, совместимые
+- **Patch** (3) — багфиксы
+
+`v2+` требуют суффикс в пути: `github.com/lib/pq/v2`
+
+### Обновление зависимостей
+
+```bash
+go get -u ./...          # обновить всё до последних minor/patch
+go get -u=patch ./...    # только patch-обновления
+go mod tidy              # удалить неиспользуемые
+```
+
+### Коммитить ли go.sum?
+
+**Да!** Всегда коммитьте оба файла:
+- `go.mod` — что нужно
+- `go.sum` — контроль целостности
+</Theory>
+
+<Syntax>
+### Основные команды
+
+```bash
+# Инициализация модуля
+go mod init имя_модуля
+
+# Загрузка зависимости
+go get путь_к_пакету
+go get путь_к_пакету@версия
+go get путь_к_пакету@latest
+
+# Удаление неиспользуемых зависимостей
+go mod tidy
+
+# Обновление зависимостей
+go get -u              # все зависимости
+go get -u ./...        # рекурсивно
+
+# Просмотр зависимостей
+go list -m all
+go mod graph
+```
+
+### Структура go.mod
+
+```go
+module example.com/myproject
+
+go 1.21
+
+require (
+    github.com/some/package v1.2.3
+    golang.org/x/text v0.3.7
+)
+
+require (
+    // indirect — зависимости зависимостей
+    github.com/indirect/dep v1.0.0 // indirect
+)
+
+replace github.com/old/path => github.com/new/path v1.0.0
+
+exclude github.com/bad/package v1.0.0
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Создание нового модуля
+
+```bash
+# Создаём папку проекта
+mkdir myproject
+cd myproject
+
+# Инициализируем модуль
+go mod init myproject
+
+# Или для публичного репозитория
+go mod init github.com/username/myproject
+```
+
+Содержимое созданного `go.mod`:
+```go
+module myproject
+
+go 1.21
+```
+
+### Простой проект с модулем
+
+**go.mod:**
+```go
+module hello
+
+go 1.21
+```
+
+**main.go:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello from module!")
+}
+```
+
+Запуск:
+```bash
+go run .        # запуск модуля (не нужно указывать файлы)
+go build .      # сборка модуля
+```
+
+### Несколько файлов в модуле
+
+**Структура:**
+```
+mymodule/
+├── go.mod
+├── main.go
+└── utils.go
+```
+
+**go.mod:**
+```go
+module mymodule
+
+go 1.21
+```
+
+**utils.go:**
+```go
+package main
+
+import "fmt"
+
+func greet(name string) {
+    fmt.Printf("Hello, %s!\n", name)
+}
+
+func calculate(a, b int) int {
+    return a + b
+}
+```
+
+**main.go:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    greet("Go Developer")
+    result := calculate(10, 20)
+    fmt.Println("Result:", result)
+}
+```
+
+Запуск:
+```bash
+go run .  # автоматически компилирует все файлы пакета main
+```
+
+### Добавление внешней зависимости
+
+```bash
+# Добавляем библиотеку
+go get github.com/fatih/color
+
+# go.mod автоматически обновится:
+# require github.com/fatih/color v1.15.0
+```
+
+**main.go:**
+```go
+package main
+
+import "github.com/fatih/color"
+
+func main() {
+    color.Red("Это красный текст!")
+    color.Green("Это зелёный текст!")
+    color.Blue("Это синий текст!")
+}
+```
+
+### Указание версии зависимости
+
+```bash
+# Конкретная версия
+go get github.com/gin-gonic/gin@v1.9.0
+
+# Последняя версия
+go get github.com/gin-gonic/gin@latest
+
+# Конкретный коммит
+go get github.com/gin-gonic/gin@abc1234
+
+# Ветка
+go get github.com/gin-gonic/gin@master
+```
+
+### Работа с go mod tidy
+
+```go
+// main.go — удалили использование пакета
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello")
+    // Раньше использовали github.com/some/package, теперь нет
+}
+```
+
+```bash
+# Удаляет неиспользуемые зависимости из go.mod и go.sum
+go mod tidy
+```
+
+### Просмотр зависимостей
+
+```bash
+# Все зависимости (включая косвенные)
+go list -m all
+
+# Граф зависимостей
+go mod graph
+
+# Почему нужна конкретная зависимость
+go mod why github.com/some/package
+
+# Доступные версии пакета
+go list -m -versions github.com/gin-gonic/gin
+```
+
+### Пример go.sum
+
+```
+github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMy2jzXRKzwM5=
+github.com/fatih/color v1.15.0/go.mod h1:0h5ZqXfHYED7Bhv2=
+github.com/mattn/go-colorable v0.1.13 h1:fFA4WZxdEF4tXPZVK=
+github.com/mattn/go-colorable v0.1.13/go.mod h1:7S9/ev0klgBDR4=
+```
+
+### Обновление всех зависимостей
+
+```bash
+# Обновить все до последних минорных/патч версий
+go get -u ./...
+
+# Обновить все до последних мажорных версий (осторожно!)
+go get -u=patch ./...
+
+# После обновления — очистка
+go mod tidy
+```
+</Examples>
+
+<Pitfalls>
+### 1. Работа вне модуля
+
+```bash
+# ❌ НЕПРАВИЛЬНО — нет go.mod
+$ go run main.go
+go: go.mod file not found in current directory or any parent directory
+
+# ✅ ПРАВИЛЬНО — инициализируем модуль
+$ go mod init myproject
+$ go run main.go
+```
+
+### 2. Несовпадение имени модуля и импорта
+
+```go
+// go.mod
+module myapp
+
+// ❌ НЕПРАВИЛЬНО — путь не совпадает с именем модуля
+import "github.com/user/myapp/utils"
+
+// ✅ ПРАВИЛЬНО
+import "myapp/utils"
+```
+
+### 3. Конфликт версий (indirect)
+
+```go
+// go.mod показывает "// indirect" — это нормально!
+require (
+    github.com/gin-gonic/gin v1.9.0
+    github.com/go-playground/validator/v10 v10.14.0 // indirect
+)
+
+// indirect означает: зависимость зависимости, не используется напрямую
+```
+
+### 4. Забыли go mod tidy после изменений
+
+```bash
+# ❌ После удаления import в коде, go.mod всё ещё содержит зависимость
+
+# ✅ ПРАВИЛЬНО — синхронизируем
+go mod tidy
+```
+
+### 5. Неправильное имя модуля для публикации
+
+```bash
+# ❌ НЕПРАВИЛЬНО для публичного пакета
+go mod init mypackage
+
+# ✅ ПРАВИЛЬНО — используем полный путь репозитория
+go mod init github.com/username/mypackage
+```
+
+### 6. Редактирование go.sum вручную
+
+```
+# ❌ НЕПРАВИЛЬНО — никогда не редактируйте go.sum вручную!
+
+# ✅ ПРАВИЛЬНО — используйте команды:
+go mod tidy        # пересоздаёт go.sum
+go mod verify      # проверяет целостность
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: go.mod</Title>
+<Prompt>
+Понимание go.mod файла.
+</Prompt>
+<Hints>
+- go mod init создаёт go.mod
+- module определяет имя модуля
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Модуль: myapp")
+    fmt.Println("Версия Go: 1.22")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Модуль: myapp
+Версия Go: 1.22
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: runtime.Version</Title>
+<Prompt>
+Выведите версию Go.
+</Prompt>
+<Hints>
+- import "runtime"
+- Возвращает строку
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+)
+
+func main() {
+    fmt.Println("Версия:", runtime.Version())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Версия: go1.22...
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: runtime.GOOS</Title>
+<Prompt>
+Выведите ОС и архитектуру.
+</Prompt>
+<Hints>
+- Константы, не функции
+- windows, linux, darwin
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+)
+
+func main() {
+    fmt.Println("ОС:", runtime.GOOS)
+    fmt.Println("Архитектура:", runtime.GOARCH)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+ОС: windows
+Архитектура: amd64
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: runtime.NumCPU</Title>
+<Prompt>
+Выведите количество CPU.
+</Prompt>
+<Hints>
+- Логические процессоры
+- Используется для параллелизма
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+)
+
+func main() {
+    fmt.Println("CPU:", runtime.NumCPU())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+CPU: 8
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: runtime.GOROOT</Title>
+<Prompt>
+Выведите путь к Go.
+</Prompt>
+<Hints>
+- Путь к установке Go
+- Может быть пустым если не установлен
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+)
+
+func main() {
+    goroot := runtime.GOROOT()
+    fmt.Println("GOROOT установлен:", goroot != "")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+GOROOT установлен: true
+</ExpectedOutput>
+</Task>

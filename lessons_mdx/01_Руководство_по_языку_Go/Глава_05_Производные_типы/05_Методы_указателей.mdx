@@ -1,0 +1,735 @@
+# Методы указателей в Go
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. **Получатель по значению** — метод получает копию объекта и не может изменить оригинал
+2. **Получатель по указателю** — метод получает адрес объекта и может изменить оригинал
+3. **Автоматическое разыменование** — Go автоматически преобразует значение в указатель при вызове метода
+4. **Когда использовать указатель**: изменение состояния, большие структуры, консистентность API
+5. **Когда использовать значение**: маленькие структуры, неизменяемые данные, безопасность
+</Overview>
+
+<Theory>
+### Получатель по значению vs по указателю
+
+Это ключевой выбор при написании методов:
+
+```go
+// По значению — получает КОПИЮ
+func (p Person) Birthday() {
+    p.Age++  // изменяет копию!
+}
+
+// По указателю — получает АДРЕС
+func (p *Person) Birthday() {
+    p.Age++  // изменяет оригинал!
+}
+```
+
+### Автоматическое преобразование
+
+Go автоматически преобразует значение в указатель и наоборот при вызове методов:
+
+```go
+p := Person{Age: 25}
+
+// Метод указателя на значении
+p.Birthday()  // Go автоматически делает (&p).Birthday()
+
+// Метод значения на указателе
+ptr := &p
+ptr.Birthday()  // Go автоматически делает (*ptr).Birthday()
+```
+
+Это упрощает код — не нужно думать о `&` и `*`.
+
+### Когда использовать указатель?
+
+**1. Нужно изменить получателя:**
+```go
+func (u *User) SetName(name string) {
+    u.Name = name  // изменяет оригинал
+}
+```
+
+**2. Структура большая:**
+```go
+type BigData struct {
+    data [10000]int
+}
+
+func (bd *BigData) Process() {  // указатель = 8 байт
+    // Без указателя копировались бы 40000 байт
+}
+```
+
+**3. Консистентность — все методы одинаковые:**
+```go
+// Если хоть один метод использует указатель,
+// обычно все методы делают так же
+func (u *User) GetName() string { return u.Name }
+func (u *User) SetName(n string) { u.Name = n }
+```
+
+### Когда использовать значение?
+
+**1. Структура маленькая (< 64 байта):**
+```go
+type Point struct {
+    X, Y int
+}
+
+func (p Point) Distance() float64 {
+    // Копирование 16 байт — дёшево
+}
+```
+
+**2. Неизменяемые данные:**
+```go
+type Time struct {
+    // ...
+}
+
+func (t Time) Add(d Duration) Time {
+    // Возвращает новый Time, не изменяет t
+}
+```
+
+**3. Безопасность от случайных изменений:**
+```go
+func (cfg Config) String() string {
+    // Гарантированно не изменит cfg
+}
+```
+
+### nil получатель
+
+Метод указателя можно вызвать на nil:
+
+```go
+func (u *User) IsNil() bool {
+    return u == nil
+}
+
+var u *User = nil
+u.IsNil()  // true, не паника!
+```
+
+Это позволяет создавать "умные" методы, обрабатывающие nil.
+
+### Практическое правило
+
+> Если сомневаетесь — используйте указатель
+
+Это безопаснее: не будет неожиданных копий, изменения будут видны.
+</Theory>
+
+<Syntax>
+### Метод с получателем по значению
+
+```go
+func (p Person) GetName() string {
+    return p.name  // читает, не изменяет
+}
+```
+
+### Метод с получателем по указателю
+
+```go
+func (p *Person) SetName(name string) {
+    p.name = name  // изменяет оригинал
+}
+```
+
+### Вызов методов
+
+```go
+person := Person{name: "Tom"}
+
+// Вызов на значении
+name := person.GetName()
+
+// Вызов метода указателя на значении (Go автоматически берёт адрес)
+person.SetName("Alice")
+
+// Явный вызов через указатель
+ptr := &person
+ptr.SetName("Bob")
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Проблема: метод по значению не изменяет объект
+
+```go
+package main
+
+import "fmt"
+
+type Counter struct {
+    value int
+}
+
+// Получатель по ЗНАЧЕНИЮ — работает с копией
+func (c Counter) IncrementWrong() {
+    c.value++  // изменяется только локальная копия
+    fmt.Println("В методе:", c.value)
+}
+
+func main() {
+    counter := Counter{value: 0}
+    
+    fmt.Println("До:", counter.value)     // 0
+    counter.IncrementWrong()               // В методе: 1
+    fmt.Println("После:", counter.value)  // 0 — не изменилось!
+}
+```
+
+### Решение: метод по указателю
+
+```go
+package main
+
+import "fmt"
+
+type Counter struct {
+    value int
+}
+
+// Получатель по УКАЗАТЕЛЮ — работает с оригиналом
+func (c *Counter) Increment() {
+    c.value++  // изменяется оригинал
+    fmt.Println("В методе:", c.value)
+}
+
+func (c *Counter) Add(n int) {
+    c.value += n
+}
+
+func (c *Counter) Reset() {
+    c.value = 0
+}
+
+// Геттер — можно по значению (не изменяет)
+func (c Counter) Value() int {
+    return c.value
+}
+
+func main() {
+    counter := Counter{value: 0}
+    
+    fmt.Println("До:", counter.Value())   // 0
+    counter.Increment()                    // В методе: 1
+    fmt.Println("После:", counter.Value()) // 1 — изменилось!
+    
+    counter.Add(10)
+    fmt.Println("После Add(10):", counter.Value())  // 11
+    
+    counter.Reset()
+    fmt.Println("После Reset:", counter.Value())    // 0
+}
+```
+
+### Автоматическое преобразование
+
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    name string
+    age  int
+}
+
+// Метод указателя
+func (p *Person) SetAge(age int) {
+    p.age = age
+}
+
+// Метод значения
+func (p Person) GetAge() int {
+    return p.age
+}
+
+func main() {
+    // Работа с ЗНАЧЕНИЕМ
+    tom := Person{name: "Tom", age: 25}
+    
+    // Go автоматически берёт адрес tom для вызова метода указателя
+    tom.SetAge(30)  // эквивалентно (&tom).SetAge(30)
+    fmt.Println(tom.GetAge())  // 30
+    
+    // Работа с УКАЗАТЕЛЕМ
+    alice := &Person{name: "Alice", age: 20}
+    
+    // Go автоматически разыменовывает для вызова метода значения
+    fmt.Println(alice.GetAge())  // эквивалентно (*alice).GetAge()
+    
+    alice.SetAge(25)
+    fmt.Println(alice.age)  // 25
+}
+```
+
+### Практический пример: Банковский счёт
+
+```go
+package main
+
+import "fmt"
+
+type Account struct {
+    owner   string
+    balance float64
+}
+
+// Методы изменения — по указателю
+func (a *Account) Deposit(amount float64) {
+    if amount > 0 {
+        a.balance += amount
+        fmt.Printf("Пополнение: +%.2f. Баланс: %.2f\n", amount, a.balance)
+    }
+}
+
+func (a *Account) Withdraw(amount float64) bool {
+    if amount > 0 && amount <= a.balance {
+        a.balance -= amount
+        fmt.Printf("Снятие: -%.2f. Баланс: %.2f\n", amount, a.balance)
+        return true
+    }
+    fmt.Println("Недостаточно средств!")
+    return false
+}
+
+// Методы чтения — можно по значению
+func (a Account) GetBalance() float64 {
+    return a.balance
+}
+
+func (a Account) String() string {
+    return fmt.Sprintf("Account[%s]: %.2f", a.owner, a.balance)
+}
+
+func main() {
+    acc := Account{owner: "Tom", balance: 1000}
+    
+    fmt.Println(acc.String())
+    
+    acc.Deposit(500)
+    acc.Withdraw(200)
+    acc.Withdraw(2000)  // Недостаточно средств!
+    
+    fmt.Println("Итоговый баланс:", acc.GetBalance())
+}
+```
+
+### Сравнение производительности
+
+```go
+package main
+
+import "fmt"
+
+// Большая структура
+type LargeStruct struct {
+    data [1000]int
+    name string
+    // ... много полей
+}
+
+// ❌ По значению — копирует всю структуру при каждом вызове
+func (l LargeStruct) ProcessByValue() {
+    // обработка
+}
+
+// ✅ По указателю — передаётся только адрес (8 байт)
+func (l *LargeStruct) ProcessByPointer() {
+    // обработка
+}
+
+// Маленькая структура
+type Point struct {
+    x, y int
+}
+
+// ✅ Для маленьких структур можно по значению
+func (p Point) Distance() float64 {
+    // копирование 16 байт — незначительно
+    return 0
+}
+```
+
+### Цепочка методов с указателями
+
+```go
+package main
+
+import "fmt"
+
+type Builder struct {
+    parts []string
+}
+
+// Возвращаем указатель для цепочки вызовов
+func (b *Builder) Add(part string) *Builder {
+    b.parts = append(b.parts, part)
+    return b  // возвращаем this
+}
+
+func (b *Builder) AddMany(parts ...string) *Builder {
+    b.parts = append(b.parts, parts...)
+    return b
+}
+
+func (b *Builder) Clear() *Builder {
+    b.parts = []string{}
+    return b
+}
+
+func (b Builder) Build() string {
+    result := ""
+    for i, p := range b.parts {
+        if i > 0 {
+            result += " "
+        }
+        result += p
+    }
+    return result
+}
+
+func main() {
+    builder := &Builder{}
+    
+    // Цепочка вызовов
+    result := builder.
+        Add("Hello").
+        Add("beautiful").
+        Add("world!").
+        Build()
+    
+    fmt.Println(result)  // Hello beautiful world!
+    
+    // Очистка и новая цепочка
+    result2 := builder.
+        Clear().
+        AddMany("Go", "is", "awesome").
+        Build()
+    
+    fmt.Println(result2)  // Go is awesome
+}
+```
+
+### Nil получатель
+
+```go
+package main
+
+import "fmt"
+
+type List struct {
+    head *Node
+}
+
+type Node struct {
+    value int
+    next  *Node
+}
+
+// Метод безопасно работает с nil получателем
+func (l *List) Length() int {
+    if l == nil || l.head == nil {
+        return 0
+    }
+    
+    count := 0
+    current := l.head
+    for current != nil {
+        count++
+        current = current.next
+    }
+    return count
+}
+
+func (l *List) IsEmpty() bool {
+    return l == nil || l.head == nil
+}
+
+func main() {
+    var list *List
+    
+    // Безопасный вызов на nil
+    fmt.Println("Длина:", list.Length())    // 0
+    fmt.Println("Пустой:", list.IsEmpty())  // true
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Использование значения вместо указателя для изменения
+
+```go
+type User struct {
+    name string
+}
+
+// ❌ НЕПРАВИЛЬНО — не изменяет оригинал
+func (u User) Rename(name string) {
+    u.name = name
+}
+
+// ✅ ПРАВИЛЬНО — изменяет оригинал
+func (u *User) Rename(name string) {
+    u.name = name
+}
+```
+
+### 2. Непоследовательность: часть методов по значению, часть по указателю
+
+```go
+type Service struct {
+    data []int
+}
+
+// ❌ НЕПРАВИЛЬНО — непоследовательно
+func (s Service) Read() []int { return s.data }
+func (s *Service) Write(d []int) { s.data = d }
+
+// ✅ ПРАВИЛЬНО — все методы по указателю для консистентности
+func (s *Service) Read() []int { return s.data }
+func (s *Service) Write(d []int) { s.data = d }
+```
+
+### 3. Забыли вернуть указатель для цепочки
+
+```go
+type Builder struct {
+    value string
+}
+
+// ❌ НЕПРАВИЛЬНО — нельзя делать цепочку
+func (b *Builder) Append(s string) {
+    b.value += s
+}
+
+// ✅ ПРАВИЛЬНО — возвращаем указатель
+func (b *Builder) Append(s string) *Builder {
+    b.value += s
+    return b
+}
+```
+
+### 4. Вызов метода на nil без проверки
+
+```go
+type Data struct {
+    value int
+}
+
+func (d *Data) Print() {
+    fmt.Println(d.value)  // panic если d == nil!
+}
+
+// ✅ ПРАВИЛЬНО — проверяем nil
+func (d *Data) Print() {
+    if d == nil {
+        fmt.Println("<nil>")
+        return
+    }
+    fmt.Println(d.value)
+}
+```
+
+### 5. Копирование структуры с методами указателей
+
+```go
+type Counter struct {
+    value int
+}
+
+func (c *Counter) Increment() {
+    c.value++
+}
+
+// ❌ НЕПРАВИЛЬНО — создаётся копия
+counter1 := Counter{value: 5}
+counter2 := counter1  // копия!
+
+counter2.Increment()
+fmt.Println(counter1.value)  // 5 — не изменился
+fmt.Println(counter2.value)  // 6
+
+// ✅ ПРАВИЛЬНО — используем указатели
+counter1 := &Counter{value: 5}
+counter2 := counter1  // тот же объект
+
+counter2.Increment()
+fmt.Println(counter1.value)  // 6 — изменился
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Метод изменяет структуру</Title>
+<Prompt>
+Создайте метод Inc() с указателем-получателем.
+</Prompt>
+<Hints>
+- `func (c *Counter) Inc() {...}`
+- Без * изменения не сохранятся
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Counter struct { value int }
+
+// Создайте метод Inc с *Counter
+
+func main() {
+    c := Counter{}
+    fmt.Println("До:", c.value)
+    c.Inc()
+    fmt.Println("После Inc():", c.value)
+    c.Inc()
+    fmt.Println("После Inc():", c.value)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: 0
+После Inc(): 1
+После Inc(): 2
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Сравнение value vs pointer receiver</Title>
+<Prompt>
+Покажите разницу между обычным и pointer получателем.
+</Prompt>
+<Hints>
+- `(c Counter)` vs `(c *Counter)`
+- Value получает копию
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Counter struct { value int }
+
+func (c Counter) tryChangeValue() { c.value = 100 }
+func (c *Counter) tryChangePointer() { c.value = 100 }
+
+func main() {
+    // Продемонстрируйте разницу
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Value receiver: 10 (не изменилось)
+Pointer receiver: 100 (изменилось)
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Getter и Setter</Title>
+<Prompt>
+Создайте getter и setter для приватного поля.
+</Prompt>
+<Hints>
+- Getter: `func (p Person) Name() string`
+- Setter: `func (p *Person) SetName(s string)`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct { name string }
+
+// Создайте Name() и SetName()
+
+func main() {
+    p := Person{name: "Alice"}
+    fmt.Println("Имя:", p.Name())
+    p.SetName("Bob")
+    fmt.Println("Новое имя:", p.Name())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Имя: Alice
+Новое имя: Bob
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: nil receiver</Title>
+<Prompt>
+Покажите обработку nil получателя в методе.
+</Prompt>
+<Hints>
+- `if l == nil { ... }`
+- Методы можно вызывать на nil
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Добавьте методы
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+log для nil: [default] message
+log для logger: [INFO] message
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Метод добавляет в срез</Title>
+<Prompt>
+Создайте метод Add() для списка, который добавляет элемент.
+</Prompt>
+<Hints>
+- `l.items = append(l.items, item)`
+- Срез внутри структуры можно модифицировать
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type IntList struct { items []int }
+
+// Создайте метод Add
+
+func main() {
+    list := IntList{}
+    list.Add(1)
+    list.Add(2)
+    list.Add(3)
+    fmt.Println("Список:", list.items)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Список: [1 2 3]
+</ExpectedOutput>
+</Task>

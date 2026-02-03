@@ -1,0 +1,699 @@
+# Синхронизация с помощью каналов
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Каналы для сигнализации** — передача сигнала о событии, а не данных
+2. **Done channel** — пустая структура `chan struct{}` для сигнала завершения
+3. **Блокировка** — ожидание данных из канала синхронизирует горутины
+4. **Закрытие как broadcast** — закрытие канала уведомляет всех получателей
+5. **Координация** — каналы позволяют упорядочить выполнение горутин
+</Overview>
+
+<Theory>
+### Каналы — не только для данных
+
+В Go часто используют каналы **не для передачи данных**, а для **сигнализации о событиях**:
+- "Я закончил работу"
+- "Пора остановиться"
+- "Можно продолжать"
+
+### Done channel — паттерн завершения
+
+```go
+done := make(chan struct{})
+
+go func() {
+    // работа...
+    close(done)  // сигнал: "я закончил"
+}()
+
+<-done  // ждём сигнала
+fmt.Println("Горутина завершилась")
+```
+
+**Почему `struct{}`?** Занимает 0 байт. Нас интересует факт события, не данные.
+
+### Закрытие как broadcast
+
+При закрытии канала **все** ожидающие получатели разблокируются:
+
+```go
+done := make(chan struct{})
+
+// 100 горутин ждут сигнала
+for i := 0; i < 100; i++ {
+    go func() {
+        <-done  // все разблокируются одновременно
+        fmt.Println("Получил сигнал!")
+    }()
+}
+
+close(done)  // один close — 100 уведомлений!
+```
+
+### Координация порядка выполнения
+
+```go
+ready := make(chan struct{})
+
+// Горутина 1: подготовка
+go func() {
+    fmt.Println("1. Подготовка...")
+    time.Sleep(time.Second)
+    close(ready)  // сигнал: "готово"
+}()
+
+// Горутина 2: ждёт готовности
+go func() {
+    <-ready  // блокируется до закрытия
+    fmt.Println("2. Начинаю работу")
+}()
+```
+
+### Отмена через контекст (современный подход)
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+
+go func() {
+    for {
+        select {
+        case <-ctx.Done():
+            fmt.Println("Отменено!")
+            return
+        default:
+            // работа
+        }
+    }
+}()
+
+cancel()  // отмена всех горутин
+```
+
+### WaitGroup vs Каналы
+
+| Задача | Инструмент |
+|--------|------------|
+| Просто дождаться завершения | `sync.WaitGroup` |
+| Получить результат | Канал с данными |
+| Broadcast-отмена | Закрытие канала |
+| Сложная координация | Каналы + select |
+
+### Типичный паттерн с done-каналом
+
+```go
+func worker(done <-chan struct{}, jobs <-chan int) {
+    for {
+        select {
+        case <-done:
+            return  // получили сигнал остановки
+        case job := <-jobs:
+            process(job)
+        }
+    }
+}
+```
+</Theory>
+
+<Syntax>
+### Сигнальные каналы
+
+```go
+// Канал для сигнализации (без данных)
+done := make(chan struct{})
+
+// Сигнализация через закрытие
+close(done)
+
+// Ожидание сигнала
+<-done
+```
+
+### Канал bool для статуса
+
+```go
+ready := make(chan bool)
+ready <- true   // готово
+ready <- false  // не готово
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Ожидание завершения горутины
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(done chan struct{}) {
+    fmt.Println("Working...")
+    time.Sleep(2 * time.Second)
+    fmt.Println("Done!")
+    
+    close(done)  // сигнал о завершении
+}
+
+func main() {
+    done := make(chan struct{})
+    
+    go worker(done)
+    
+    fmt.Println("Waiting for worker...")
+    <-done  // блокируемся до закрытия
+    
+    fmt.Println("Worker finished, exiting.")
+}
+```
+
+### Синхронизация нескольких горутин
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(id int, done chan bool) {
+    fmt.Printf("Worker %d: starting\n", id)
+    time.Sleep(time.Duration(id*100) * time.Millisecond)
+    fmt.Printf("Worker %d: done\n", id)
+    
+    done <- true  // отправляем сигнал
+}
+
+func main() {
+    done := make(chan bool)
+    workerCount := 5
+    
+    // Запускаем горутины
+    for i := 1; i <= workerCount; i++ {
+        go worker(i, done)
+    }
+    
+    // Ждём все горутины
+    for i := 1; i <= workerCount; i++ {
+        <-done
+    }
+    
+    fmt.Println("All workers completed!")
+}
+```
+
+### Передача результата через канал
+
+```go
+package main
+
+import "fmt"
+
+type Result struct {
+    Value int
+    Error error
+}
+
+func compute(n int, resultCh chan<- Result) {
+    if n < 0 {
+        resultCh <- Result{Error: fmt.Errorf("negative number: %d", n)}
+        return
+    }
+    
+    result := n * n
+    resultCh <- Result{Value: result}
+}
+
+func main() {
+    resultCh := make(chan Result)
+    
+    go compute(5, resultCh)
+    
+    result := <-resultCh
+    if result.Error != nil {
+        fmt.Println("Error:", result.Error)
+    } else {
+        fmt.Println("Result:", result.Value)
+    }
+}
+```
+
+### Сбор результатов в map
+
+```go
+package main
+
+import "fmt"
+
+func square(n int, done chan struct{}, results map[int]int) {
+    results[n] = n * n
+    close(done)
+}
+
+func main() {
+    results := make(map[int]int)
+    done := make(chan struct{})
+    
+    go square(7, done, results)
+    
+    <-done  // ждём завершения
+    
+    for k, v := range results {
+        fmt.Printf("%d² = %d\n", k, v)
+    }
+}
+```
+
+### Паттерн: Start/Stop
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type Server struct {
+    stop chan struct{}
+}
+
+func NewServer() *Server {
+    return &Server{stop: make(chan struct{})}
+}
+
+func (s *Server) Start() {
+    go func() {
+        ticker := time.NewTicker(500 * time.Millisecond)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-s.stop:
+                fmt.Println("Server stopped")
+                return
+            case t := <-ticker.C:
+                fmt.Println("Tick at", t.Format("15:04:05"))
+            }
+        }
+    }()
+}
+
+func (s *Server) Stop() {
+    close(s.stop)
+}
+
+func main() {
+    server := NewServer()
+    
+    fmt.Println("Starting server...")
+    server.Start()
+    
+    time.Sleep(2 * time.Second)
+    
+    fmt.Println("Stopping server...")
+    server.Stop()
+    
+    time.Sleep(500 * time.Millisecond)
+}
+```
+
+### Координация: Barrier
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+func worker(id int, ready chan struct{}, start chan struct{}, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    fmt.Printf("Worker %d: preparing...\n", id)
+    time.Sleep(time.Duration(id*100) * time.Millisecond)
+    
+    ready <- struct{}{}  // сигнал "готов"
+    
+    <-start  // ждём сигнала старта
+    
+    fmt.Printf("Worker %d: working!\n", id)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    ready := make(chan struct{})
+    start := make(chan struct{})
+    workerCount := 3
+    
+    // Запускаем воркеров
+    for i := 1; i <= workerCount; i++ {
+        wg.Add(1)
+        go worker(i, ready, start, &wg)
+    }
+    
+    // Ждём готовности всех
+    for i := 0; i < workerCount; i++ {
+        <-ready
+    }
+    
+    fmt.Println("\nAll ready! Starting...")
+    close(start)  // broadcast: все начинают одновременно
+    
+    wg.Wait()
+}
+```
+
+### Request/Response через каналы
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type Request struct {
+    Data     int
+    Response chan int
+}
+
+func server(requests <-chan Request) {
+    for req := range requests {
+        // Обрабатываем запрос
+        result := req.Data * 2
+        time.Sleep(100 * time.Millisecond)
+        
+        // Отправляем ответ
+        req.Response <- result
+    }
+}
+
+func main() {
+    requests := make(chan Request)
+    
+    go server(requests)
+    
+    // Отправляем запросы
+    for i := 1; i <= 3; i++ {
+        response := make(chan int)
+        
+        requests <- Request{Data: i * 10, Response: response}
+        
+        result := <-response
+        fmt.Printf("Request %d: got %d\n", i, result)
+    }
+    
+    close(requests)
+}
+```
+
+### Практический пример: Task Queue с acknowledgment
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type Task struct {
+    ID   int
+    Done chan struct{}
+}
+
+func processor(tasks <-chan Task) {
+    for task := range tasks {
+        fmt.Printf("Processing task %d...\n", task.ID)
+        time.Sleep(500 * time.Millisecond)
+        fmt.Printf("Task %d complete!\n", task.ID)
+        
+        close(task.Done)  // подтверждаем выполнение
+    }
+}
+
+func main() {
+    tasks := make(chan Task)
+    
+    go processor(tasks)
+    
+    // Отправляем задачи и ждём подтверждения
+    for i := 1; i <= 3; i++ {
+        task := Task{
+            ID:   i,
+            Done: make(chan struct{}),
+        }
+        
+        tasks <- task
+        
+        <-task.Done  // ждём подтверждения
+        fmt.Printf("Task %d acknowledged\n", i)
+    }
+    
+    close(tasks)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неправильное количество сигналов
+
+```go
+done := make(chan bool)
+
+// Запускаем 3 горутины
+for i := 0; i < 3; i++ {
+    go func() {
+        done <- true
+    }()
+}
+
+// ❌ Ждём только 2 — третья заблокируется
+<-done
+<-done
+
+// ✅ Ждём все 3
+for i := 0; i < 3; i++ {
+    <-done
+}
+```
+
+### 2. Гонка при записи результатов
+
+```go
+results := make(map[int]int)
+
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        results[n] = n * n  // ❌ Гонка данных!
+    }(i)
+}
+
+// ✅ Используйте канал для результатов
+resultCh := make(chan struct{ key, value int }, 3)
+
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        resultCh <- struct{ key, value int }{n, n * n}
+    }(i)
+}
+```
+
+### 3. Утечка горутины при неполученном сигнале
+
+```go
+func process() {
+    done := make(chan struct{})
+    
+    go func() {
+        // работа...
+        close(done)  // ❌ Если main вернётся раньше, горутина застрянет
+    }()
+    
+    // Забыли <-done
+}
+
+// ✅ Всегда дожидайтесь сигнала
+func processCorrect() {
+    done := make(chan struct{})
+    
+    go func() {
+        // работа...
+        close(done)
+    }()
+    
+    <-done  // Ждём!
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: strconv.Atoi</Title>
+<Prompt>
+Преобразуйте строку в число.
+</Prompt>
+<Hints>
+- import "strconv"
+- Atoi = ASCII to integer
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func main() {
+    s := "42"
+    n, err := strconv.Atoi(s)
+    if err == nil {
+        fmt.Printf(""%s" -> %d\n", s, n)
+    }
+}
+```
+</StarterCode>
+<ExpectedOutput>
+"42" -> 42
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="5">
+<Title>Задание 2: strconv.Itoa</Title>
+<Prompt>
+Преобразуйте число в строку.
+</Prompt>
+<Hints>
+- Itoa = integer to ASCII
+- Также fmt.Sprintf("%d", n)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func main() {
+    n := 42
+    s := strconv.Itoa(n)
+    fmt.Printf("%d -> "%s"\n", n, s)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+42 -> "42"
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: strconv.ParseFloat</Title>
+<Prompt>
+Преобразуйте строку в float64.
+</Prompt>
+<Hints>
+- strconv.ParseFloat("3.14", 64)
+- Второй аргумент — размер в битах
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func main() {
+    s := "3.14"
+    f, err := strconv.ParseFloat(s, 64)
+    if err == nil {
+        fmt.Printf(""%s" -> %f\n", s, f)
+    }
+}
+```
+</StarterCode>
+<ExpectedOutput>
+"3.14" -> 3.140000
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: strconv.ParseBool</Title>
+<Prompt>
+Преобразуйте строку в bool.
+</Prompt>
+<Hints>
+- Множество допустимых значений
+- Ошибка для недопустимых
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func main() {
+    for _, s := range []string{"true", "1", "false"} {
+        b, _ := strconv.ParseBool(s)
+        fmt.Printf(""%s" -> %t\n", s, b)
+    }
+}
+```
+</StarterCode>
+<ExpectedOutput>
+"true" -> true
+"1" -> true
+"false" -> false
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: strconv.FormatInt</Title>
+<Prompt>
+Преобразуйте число в строку с заданным основанием.
+</Prompt>
+<Hints>
+- FormatInt(255, 2) -> "11111111"
+- FormatInt(255, 16) -> "ff"
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func main() {
+    n := int64(255)
+    fmt.Println("255 в двоичной:", strconv.FormatInt(n, 2))
+    fmt.Println("255 в hex:", strconv.FormatInt(n, 16))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+255 в двоичной: 11111111
+255 в hex: ff
+</ExpectedOutput>
+</Task>

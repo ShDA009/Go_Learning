@@ -1,0 +1,566 @@
+# Пакеты и их импорт в Go
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **Пакет (package)** — единица организации кода в Go; физически — папка с файлами `.go`
+2. **package main** — специальный пакет для создания исполняемых программ
+3. **func main()** — точка входа в программу, обязательна для пакета main
+4. **import** — подключение функциональности из других пакетов
+5. **Экспорт** — функции/переменные с заглавной буквы видны в других пакетах
+6. **Обязательное использование** — неиспользуемый импорт вызывает ошибку компиляции
+</Overview>
+
+<Theory>
+### Что такое пакет?
+
+**Пакет** — это способ организации кода в Go. Физически пакет — это папка с файлами `.go`, имеющими одинаковое объявление `package`.
+
+```
+myproject/
+├── main.go         (package main)
+├── utils/
+│   ├── helper.go   (package utils)
+│   └── math.go     (package utils)
+```
+
+### Зачем нужны пакеты?
+
+1. **Организация кода** — группировка связанной функциональности
+2. **Повторное использование** — импорт в другие проекты
+3. **Инкапсуляция** — скрытие деталей реализации
+4. **Избежание конфликтов имён** — одинаковые имена в разных пакетах не конфликтуют
+
+### package main — особый пакет
+
+Пакет `main` — это точка входа в программу:
+- Должен содержать функцию `main()`
+- Компилируется в исполняемый файл
+- В проекте может быть несколько `main` (в разных папках)
+
+```go
+package main
+
+func main() {
+    // Программа начинается здесь
+}
+```
+
+### Экспорт и приватность
+
+Go определяет видимость по **регистру первой буквы**:
+
+```go
+package mypackage
+
+var PublicVar = "видна снаружи"   // Экспортируется
+var privateVar = "только внутри"  // Не экспортируется
+
+func PublicFunc() {}  // Экспортируется
+func privateFunc() {} // Не экспортируется
+```
+
+Это работает для: переменных, функций, типов, полей структур, методов.
+
+### Импорт пакетов
+
+**Стандартная библиотека:**
+```go
+import "fmt"
+import "net/http"
+```
+
+**Внешние пакеты:**
+```go
+import "github.com/gin-gonic/gin"
+```
+
+**Локальные пакеты:**
+```go
+import "myproject/utils"
+```
+
+### Алиасы импорта
+
+```go
+import (
+    f "fmt"              // f.Println()
+    . "strings"          // ToUpper() без префикса
+    _ "database/sql/driver" // только side effects
+)
+```
+
+### Почему Go требует использовать импорты?
+
+Неиспользуемый импорт = ошибка компиляции. Это:
+- Держит код чистым
+- Ускоряет компиляцию
+- Явно показывает зависимости
+
+Если нужен импорт без использования (для init()), используйте `_`:
+```go
+import _ "github.com/lib/pq"
+```
+</Theory>
+
+<Syntax>
+### Объявление пакета
+
+```go
+package main     // исполняемый пакет
+package myutils  // библиотечный пакет
+```
+
+### Импорт одного пакета
+
+```go
+import "fmt"
+import "math"
+```
+
+### Импорт нескольких пакетов (рекомендуется)
+
+```go
+import (
+    "fmt"
+    "math"
+    "strings"
+)
+```
+
+### Виды импорта
+
+```go
+import "fmt"           // обычный: fmt.Println()
+import . "fmt"         // dot import: Println()
+import f "fmt"         // псевдоним: f.Println()
+import _ "database/sql" // blank import (только init())
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Минимальная программа Go
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, World!")
+}
+```
+
+### Использование нескольких пакетов
+
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+    "strings"
+)
+
+func main() {
+    // Пакет fmt — форматированный ввод/вывод
+    fmt.Println("Go packages demo")
+    
+    // Пакет math — математические функции
+    fmt.Println("√16 =", math.Sqrt(16))
+    fmt.Println("2³ =", math.Pow(2, 3))
+    fmt.Println("π =", math.Pi)
+    
+    // Пакет strings — работа со строками
+    fmt.Println(strings.ToUpper("hello"))
+    fmt.Println(strings.Contains("golang", "go"))
+}
+```
+
+### Dot import (использовать осторожно!)
+
+```go
+package main
+
+import (
+    . "fmt"      // теперь можно использовать без префикса
+    . "math"
+)
+
+func main() {
+    Println("Квадратный корень из 25:", Sqrt(25))
+    Println("Число π:", Pi)
+}
+```
+
+### Псевдонимы пакетов
+
+```go
+package main
+
+import (
+    f "fmt"           // псевдоним f для fmt
+    m "math"          // псевдоним m для math
+    str "strings"     // псевдоним str для strings
+)
+
+func main() {
+    f.Println("Используем псевдонимы")
+    f.Println("Корень из 9:", m.Sqrt(9))
+    f.Println(str.ToLower("HELLO"))
+}
+```
+
+### Blank import (подключение без использования)
+
+```go
+package main
+
+import (
+    "fmt"
+    _ "image/png"  // регистрирует PNG декодер, но напрямую не используется
+)
+
+func main() {
+    fmt.Println("PNG декодер зарегистрирован")
+}
+```
+
+### Несколько файлов в одном пакете
+
+**hello.go:**
+```go
+package main
+
+import "fmt"
+
+func sayHello() {
+    fmt.Println("Hello from hello.go!")
+}
+```
+
+**main.go:**
+```go
+package main
+
+func main() {
+    sayHello()  // функция из hello.go доступна без импорта
+}
+```
+
+Запуск:
+```bash
+go run main.go hello.go
+# или для модуля:
+go run .
+```
+
+### Экспортируемые и неэкспортируемые идентификаторы
+
+```go
+package mymath
+
+// PublicAdd — экспортируется (заглавная буква)
+func PublicAdd(a, b int) int {
+    return a + b
+}
+
+// privateMultiply — НЕ экспортируется (строчная буква)
+func privateMultiply(a, b int) int {
+    return a * b
+}
+
+// Pi — экспортируемая константа
+const Pi = 3.14159
+
+// maxValue — НЕ экспортируемая константа
+const maxValue = 1000
+```
+
+### Проверка переменных окружения Go
+
+```go
+package main
+
+import (
+    "fmt"
+    "os/exec"
+)
+
+func main() {
+    // GOROOT — где установлен Go
+    goroot, _ := exec.Command("go", "env", "GOROOT").Output()
+    fmt.Println("GOROOT:", string(goroot))
+    
+    // GOPATH — рабочая директория Go
+    gopath, _ := exec.Command("go", "env", "GOPATH").Output()
+    fmt.Println("GOPATH:", string(gopath))
+    
+    // GOMODCACHE — кеш модулей
+    gomodcache, _ := exec.Command("go", "env", "GOMODCACHE").Output()
+    fmt.Println("GOMODCACHE:", string(gomodcache))
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неиспользуемый импорт
+
+```go
+// ❌ НЕПРАВИЛЬНО — ошибка компиляции
+import "fmt"
+import "math"  // imported and not used
+
+func main() {
+    fmt.Println("Hello")
+}
+
+// ✅ ПРАВИЛЬНО — используем blank import если пакет нужен для side effects
+import "fmt"
+import _ "math"  // явно указываем, что не используем напрямую
+
+func main() {
+    fmt.Println("Hello")
+}
+```
+
+### 2. Попытка вызвать неэкспортируемую функцию
+
+```go
+// В пакете mypackage
+package mypackage
+
+func helper() string {  // строчная буква — приватная
+    return "helper"
+}
+
+// В другом пакете
+// ❌ НЕПРАВИЛЬНО
+import "mypackage"
+mypackage.helper()  // undefined: mypackage.helper
+
+// ✅ ПРАВИЛЬНО — функция должна начинаться с заглавной буквы
+func Helper() string {
+    return "helper"
+}
+```
+
+### 3. Конфликт имён при dot import
+
+```go
+// ❌ ОПАСНО — неоднозначность
+import . "fmt"
+import . "log"  // оба пакета имеют Println!
+
+func main() {
+    Println("Какой пакет?")  // неясно: fmt.Println или log.Println?
+}
+
+// ✅ ПРАВИЛЬНО — используем обычный импорт
+import "fmt"
+import "log"
+
+func main() {
+    fmt.Println("Это fmt")
+    log.Println("Это log")
+}
+```
+
+### 4. Неправильный путь импорта
+
+```go
+// ❌ НЕПРАВИЛЬНО
+import "Fmt"        // регистр важен!
+import "FMT"
+import "./fmt"      // относительные пути не работают в модулях
+
+// ✅ ПРАВИЛЬНО
+import "fmt"
+import "mymodule/mypackage"
+```
+
+### 5. Забыли указать package в начале файла
+
+```go
+// ❌ НЕПРАВИЛЬНО — ошибка
+import "fmt"
+
+func main() {
+    fmt.Println("Hello")
+}
+
+// ✅ ПРАВИЛЬНО — package должен быть первым
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello")
+}
+```
+
+### 6. Разные пакеты в одной папке
+
+```go
+// ❌ НЕПРАВИЛЬНО — все файлы в папке должны быть одного пакета
+// file1.go
+package main
+
+// file2.go (в той же папке)
+package utils  // ОШИБКА: found packages main and utils
+
+// ✅ ПРАВИЛЬНО — один пакет на папку
+// utils/file1.go и utils/file2.go — оба package utils
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Импорт fmt</Title>
+<Prompt>
+Импортируйте и используйте пакет fmt.
+</Prompt>
+<Hints>
+- Базовый пакет для ввода-вывода
+- Часть стандартной библиотеки
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Пакет fmt работает!")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Пакет fmt работает!
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Группировка импортов</Title>
+<Prompt>
+Импортируйте несколько пакетов с группировкой.
+</Prompt>
+<Hints>
+- Группировка улучшает читаемость
+- Стандартные пакеты без пути
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+    "unicode/utf8"
+)
+
+func main() {
+    s := "hello"
+    fmt.Println(strings.ToUpper(s))
+    fmt.Printf("Строка: %d символов\n", utf8.RuneCountInString(s))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+HELLO
+Строка: 5 символов
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Алиас пакета</Title>
+<Prompt>
+Используйте алиас для пакета fmt.
+</Prompt>
+<Hints>
+- import f "fmt"
+- Удобно для длинных имён или конфликтов
+</Hints>
+<StarterCode>
+```go
+package main
+
+import f "fmt"
+
+func main() {
+    f.Println("Вывод через алиас")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Вывод через алиас
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Пакет math</Title>
+<Prompt>
+Используйте функции пакета math.
+</Prompt>
+<Hints>
+- math.Sqrt возвращает float64
+- math.Pi — константа
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("sqrt(16) = %.0f\n", math.Sqrt(16))
+    fmt.Printf("Pi = %.2f\n", math.Pi)
+    fmt.Printf("max(5, 3) = %.0f\n", math.Max(5, 3))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+sqrt(16) = 4
+Pi = 3.14
+max(5, 3) = 5
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Пакет time</Title>
+<Prompt>
+Получите и форматируйте текущее время.
+</Prompt>
+<Hints>
+- now := time.Now()
+- Month() и Weekday() возвращают типы с String()
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    now := time.Now()
+    fmt.Println("Год:", now.Year())
+    fmt.Println("Месяц:", now.Month())
+    fmt.Println("День недели:", now.Weekday())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Год: 2024
+Месяц: January
+День недели: Monday
+</ExpectedOutput>
+</Task>

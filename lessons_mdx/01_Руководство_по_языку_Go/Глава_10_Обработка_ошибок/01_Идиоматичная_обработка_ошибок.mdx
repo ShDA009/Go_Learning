@@ -1,0 +1,695 @@
+# Идиоматичная обработка ошибок в Go
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Ошибки как значения** — Go не использует исключения, ошибки возвращаются как значения
+2. **Множественный возврат** — функция возвращает результат и ошибку
+3. **nil = успех** — если ошибка равна nil, операция успешна
+4. **Явная проверка** — ошибку нужно проверять сразу после вызова
+5. **Простота** — обработка ошибок встроена в обычный поток управления
+6. **Философия Go** — "Errors are values" (ошибки — это значения)
+</Overview>
+
+<Theory>
+### Почему Go не использует исключения?
+
+Большинство языков используют `try/catch`:
+
+```java
+// Java
+try {
+    result = riskyOperation();
+} catch (Exception e) {
+    handleError(e);
+}
+```
+
+Go **намеренно** отказался от исключений. Причины:
+
+1. **Явность** — ошибки видны в сигнатуре функции
+2. **Простота** — нет скрытого потока управления
+3. **Предсказуемость** — код делает то, что написано
+
+### Ошибки как значения
+
+В Go ошибка — это обычное значение, возвращаемое из функции:
+
+```go
+func ReadFile(name string) ([]byte, error) {
+    // возвращает данные И ошибку
+}
+
+data, err := ReadFile("config.json")
+if err != nil {
+    // обрабатываем ошибку
+}
+// используем data
+```
+
+### Паттерн "проверяй ошибку сразу"
+
+```go
+// ✅ Идиоматичный Go
+f, err := os.Open("file.txt")
+if err != nil {
+    return err
+}
+defer f.Close()
+// работаем с f
+
+// ❌ Плохо — отложенная проверка
+f, err := os.Open("file.txt")
+// куча кода
+if err != nil {  // легко забыть
+    return err
+}
+```
+
+### Что делать с ошибкой?
+
+**1. Вернуть вызывающему:**
+```go
+if err != nil {
+    return err
+}
+```
+
+**2. Обернуть и вернуть (добавить контекст):**
+```go
+if err != nil {
+    return fmt.Errorf("open config: %w", err)
+}
+```
+
+**3. Обработать и продолжить:**
+```go
+if err != nil {
+    log.Printf("warning: %v", err)
+    useDefault()
+}
+```
+
+**4. Завершить программу:**
+```go
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Игнорировать ошибку — осторожно!
+
+```go
+_ = someFunction()  // явно игнорируем
+```
+
+Игнорируйте только когда:
+- Ошибка действительно не важна
+- Документируйте почему
+
+### Интерфейс error
+
+`error` — это встроенный интерфейс:
+
+```go
+type error interface {
+    Error() string
+}
+```
+
+Любой тип с методом `Error() string` является ошибкой.
+
+### Создание ошибок
+
+```go
+// Простая ошибка
+err := errors.New("something went wrong")
+
+// Форматированная ошибка
+err := fmt.Errorf("failed to load %s: file not found", filename)
+
+// Обёрнутая ошибка (Go 1.13+)
+err := fmt.Errorf("open file: %w", originalErr)
+```
+</Theory>
+
+<Syntax>
+### Возврат ошибки из функции
+
+```go
+func operation() (ResultType, error) {
+    if somethingWrong {
+        return defaultValue, errors.New("error message")
+    }
+    return result, nil
+}
+```
+
+### Проверка ошибки
+
+```go
+result, err := operation()
+if err != nil {
+    // обработка ошибки
+    return err  // или log.Fatal(err), или другая реакция
+}
+// использование result
+```
+
+### Игнорирование ошибки (редко!)
+
+```go
+result, _ := operation()  // _ игнорирует ошибку
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый паттерн обработки
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Типичный паттерн: вызов + проверка
+    file, err := os.Open("config.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    fmt.Println("File opened successfully:", file.Name())
+}
+```
+
+### Функция с возвратом ошибки
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+func divide(a, b float64) (float64, error) {
+    if b == 0 {
+        return 0, errors.New("division by zero")
+    }
+    return a / b, nil
+}
+
+func main() {
+    // Успешный вызов
+    result, err := divide(10, 2)
+    if err != nil {
+        fmt.Println("Error:", err)
+    } else {
+        fmt.Printf("10 / 2 = %.2f\n", result)
+    }
+    
+    // Вызов с ошибкой
+    result, err = divide(10, 0)
+    if err != nil {
+        fmt.Println("Error:", err)
+    } else {
+        fmt.Printf("10 / 0 = %.2f\n", result)
+    }
+}
+```
+
+### Факториал с проверкой
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+func factorial(n int) (int, error) {
+    if n < 0 {
+        return 0, errors.New("factorial is not defined for negative numbers")
+    }
+    
+    if n > 20 {
+        return 0, errors.New("number too large, would overflow")
+    }
+    
+    result := 1
+    for i := 2; i <= n; i++ {
+        result *= i
+    }
+    return result, nil
+}
+
+func main() {
+    testValues := []int{5, 0, -3, 25}
+    
+    for _, n := range testValues {
+        result, err := factorial(n)
+        if err != nil {
+            fmt.Printf("factorial(%d) = Error: %v\n", n, err)
+        } else {
+            fmt.Printf("factorial(%d) = %d\n", n, result)
+        }
+    }
+}
+```
+
+### Цепочка проверок
+
+```go
+package main
+
+import (
+    "fmt"
+    "strconv"
+)
+
+func parseAndDouble(s string) (int, error) {
+    // Первая потенциальная ошибка
+    num, err := strconv.Atoi(s)
+    if err != nil {
+        return 0, fmt.Errorf("parsing failed: %w", err)
+    }
+    
+    // Вторая потенциальная ошибка
+    if num < 0 {
+        return 0, fmt.Errorf("negative number not allowed: %d", num)
+    }
+    
+    return num * 2, nil
+}
+
+func main() {
+    inputs := []string{"42", "abc", "-5", "100"}
+    
+    for _, input := range inputs {
+        result, err := parseAndDouble(input)
+        if err != nil {
+            fmt.Printf("Input %q: Error - %v\n", input, err)
+        } else {
+            fmt.Printf("Input %q: Result = %d\n", input, result)
+        }
+    }
+}
+```
+
+### Раннее возвращение (early return)
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+type User struct {
+    Name  string
+    Email string
+    Age   int
+}
+
+func validateUser(u User) error {
+    // Проверяем каждое условие и сразу возвращаем ошибку
+    if u.Name == "" {
+        return errors.New("name is required")
+    }
+    
+    if u.Email == "" {
+        return errors.New("email is required")
+    }
+    
+    if u.Age < 0 {
+        return errors.New("age cannot be negative")
+    }
+    
+    if u.Age < 18 {
+        return errors.New("user must be at least 18 years old")
+    }
+    
+    return nil  // Все проверки пройдены
+}
+
+func main() {
+    users := []User{
+        {Name: "Alice", Email: "alice@example.com", Age: 25},
+        {Name: "", Email: "bob@example.com", Age: 30},
+        {Name: "Charlie", Email: "", Age: 20},
+        {Name: "Diana", Email: "diana@example.com", Age: 15},
+    }
+    
+    for _, user := range users {
+        if err := validateUser(user); err != nil {
+            fmt.Printf("User %q: %v\n", user.Name, err)
+        } else {
+            fmt.Printf("User %q: Valid!\n", user.Name)
+        }
+    }
+}
+```
+
+### Ошибки на разных уровнях
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// Низкий уровень
+func readConfig() (string, error) {
+    // Имитация ошибки чтения
+    return "", errors.New("file not found")
+}
+
+// Средний уровень
+func loadSettings() (map[string]string, error) {
+    config, err := readConfig()
+    if err != nil {
+        return nil, fmt.Errorf("loadSettings: %w", err)
+    }
+    
+    // Парсинг config...
+    _ = config
+    return map[string]string{}, nil
+}
+
+// Высокий уровень
+func startApp() error {
+    settings, err := loadSettings()
+    if err != nil {
+        return fmt.Errorf("startApp: %w", err)
+    }
+    
+    // Использование settings...
+    _ = settings
+    fmt.Println("App started!")
+    return nil
+}
+
+func main() {
+    err := startApp()
+    if err != nil {
+        fmt.Println("Failed to start app:", err)
+        // Полный путь ошибки: startApp: loadSettings: file not found
+    }
+}
+```
+
+### Практический пример: обработка HTTP запроса
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "errors"
+    "fmt"
+)
+
+type Response struct {
+    Data   string `json:"data"`
+    Status int    `json:"status"`
+}
+
+func fetchData() ([]byte, error) {
+    // Имитация HTTP-ответа
+    return []byte(`{"data": "hello", "status": 200}`), nil
+}
+
+func parseResponse(body []byte) (*Response, error) {
+    var resp Response
+    if err := json.Unmarshal(body, &resp); err != nil {
+        return nil, fmt.Errorf("parse error: %w", err)
+    }
+    
+    if resp.Status != 200 {
+        return nil, fmt.Errorf("bad status: %d", resp.Status)
+    }
+    
+    return &resp, nil
+}
+
+func getData() (string, error) {
+    // Шаг 1: получаем данные
+    body, err := fetchData()
+    if err != nil {
+        return "", fmt.Errorf("fetch failed: %w", err)
+    }
+    
+    // Шаг 2: парсим ответ
+    resp, err := parseResponse(body)
+    if err != nil {
+        return "", fmt.Errorf("response error: %w", err)
+    }
+    
+    return resp.Data, nil
+}
+
+func main() {
+    data, err := getData()
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    
+    fmt.Println("Data:", data)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Игнорирование ошибки
+
+```go
+// ❌ ПЛОХО — ошибка игнорируется
+file, _ := os.Open("config.txt")
+file.Read(buffer)  // panic если file == nil
+
+// ✅ ХОРОШО — ошибка обрабатывается
+file, err := os.Open("config.txt")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### 2. Проверка ошибки после использования результата
+
+```go
+// ❌ НЕПРАВИЛЬНО
+result, err := operation()
+fmt.Println(result)  // может быть zero value!
+if err != nil {
+    // ...
+}
+
+// ✅ ПРАВИЛЬНО
+result, err := operation()
+if err != nil {
+    // обработка ошибки
+    return
+}
+fmt.Println(result)  // безопасно
+```
+
+### 3. Затенение переменной err
+
+```go
+func process() error {
+    err := step1()
+    if err != nil {
+        return err
+    }
+    
+    // ❌ err := создаёт новую переменную!
+    result, err := step2()
+    if err != nil {
+        return err
+    }
+    
+    // ✅ Используйте = вместо := если err уже объявлена
+    result, err = step3()
+    // ...
+}
+```
+
+### 4. Возврат err напрямую без контекста
+
+```go
+// ❌ Потеря контекста
+func loadUser(id int) (*User, error) {
+    return db.Get(id)  // "record not found" — какой record?
+}
+
+// ✅ Добавляем контекст
+func loadUser(id int) (*User, error) {
+    user, err := db.Get(id)
+    if err != nil {
+        return nil, fmt.Errorf("loadUser(%d): %w", id, err)
+    }
+    return user, nil
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Базовая обработка ошибок</Title>
+<Prompt>
+Напишите функцию `divide`, которая делит два числа и возвращает ошибку при делении на ноль.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+10 / 2 = 5.00
+Error: division by zero
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Проверка возраста</Title>
+<Prompt>
+Напишите функцию `validateAge`, которая проверяет возраст и возвращает ошибку для недопустимых значений.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Age 25: valid
+Age -5: Error: age cannot be negative
+Age 150: Error: age cannot exceed 120
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Форматированная ошибка</Title>
+<Prompt>
+Используйте `fmt.Errorf` для создания информативных сообщений об ошибках с контекстом.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+)
+
+// TODO: Используйте context
+// TODO: Обработайте ошибки
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Error: user "admin" not found in database
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Цепочка ошибок</Title>
+<Prompt>
+Создайте функцию, которая оборачивает ошибки с помощью `%w` для сохранения цепочки ошибок.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "os"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Error: loadConfig: readFile: file not found
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Валидация пользователя</Title>
+<Prompt>
+Напишите функцию валидации пользователя с несколькими проверками и ранним возвратом (early return).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+User "Alice": valid
+User "": Error: name is required
+User "Bob" (age 15): Error: user must be at least 18
+</ExpectedOutput>
+</Task>

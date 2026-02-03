@@ -1,0 +1,653 @@
+# Двунаправленные и однонаправленные каналы
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Двунаправленный канал** `chan T` — можно отправлять и получать
+2. **Канал только для отправки** `chan<- T` — только запись
+3. **Канал только для получения** `<-chan T` — только чтение
+4. **Преобразование** — двунаправленный можно передать как однонаправленный
+5. **Безопасность** — компилятор проверяет направление операций
+6. **Документация** — сигнатура функции показывает намерение
+</Overview>
+
+<Theory>
+### Зачем нужны однонаправленные каналы?
+
+Представьте двунаправленный канал как дверь — любой может войти или выйти. Однонаправленные каналы — это турникеты: определяют направление движения.
+
+```go
+// Двунаправленный — полный доступ
+chan int
+
+// Только отправка — "вход"
+chan<- int
+
+// Только получение — "выход"
+<-chan int
+```
+
+### Как запомнить направление?
+
+**Стрелка показывает, куда идут данные:**
+
+```go
+chan<- T   // данные → в канал (send)
+<-chan T   // данные ← из канала (receive)
+```
+
+### Преобразование типов
+
+Двунаправленный канал можно передать как однонаправленный, но **не наоборот**:
+
+```go
+ch := make(chan int)  // двунаправленный
+
+var sendOnly chan<- int = ch  // OK
+var recvOnly <-chan int = ch  // OK
+
+// ch = sendOnly  // ОШИБКА компиляции!
+```
+
+### Главное преимущество — безопасность
+
+Компилятор проверяет, что вы используете канал правильно:
+
+```go
+func producer(ch chan<- int) {
+    ch <- 42      // OK — можно отправлять
+    // <-ch       // ОШИБКА компиляции — нельзя читать!
+}
+
+func consumer(ch <-chan int) {
+    x := <-ch     // OK — можно читать
+    // ch <- 42   // ОШИБКА компиляции — нельзя писать!
+}
+```
+
+### Документирующая роль
+
+Сигнатура функции показывает её роль:
+
+```go
+// Сразу понятно: только производит данные
+func Generate(done <-chan struct{}) <-chan int
+
+// Сразу понятно: только потребляет данные
+func Process(input <-chan int)
+
+// Сразу понятно: преобразует поток
+func Transform(input <-chan int) <-chan int
+```
+
+### Паттерн: генератор
+
+```go
+func numbers(n int) <-chan int {
+    ch := make(chan int)
+    go func() {
+        defer close(ch)
+        for i := 0; i < n; i++ {
+            ch <- i
+        }
+    }()
+    return ch  // возвращаем read-only
+}
+
+func main() {
+    for n := range numbers(5) {
+        fmt.Println(n)
+    }
+}
+```
+
+Вызывающий код **не может** случайно закрыть или записать в канал.
+
+### Правила хорошего тона
+
+1. **Создавайте** двунаправленные каналы
+2. **Передавайте** однонаправленные в функции
+3. **Возвращайте** однонаправленные из функций
+4. **Закрывает** только тот, кто пишет (send-only)
+</Theory>
+
+<Syntax>
+### Типы каналов
+
+```go
+chan T      // двунаправленный — чтение и запись
+chan<- T    // только отправка (send-only)
+<-chan T    // только получение (receive-only)
+```
+
+### Создание каналов
+
+```go
+// Двунаправленный (единственный способ создания)
+ch := make(chan int)
+
+// При передаче в функцию — автоматическое преобразование
+func sender(ch chan<- int) {}   // только отправка
+func receiver(ch <-chan int) {} // только получение
+```
+
+### Направление стрелки
+
+```go
+// Мнемоника: куда идут данные?
+chan<- T   // данные ИДУТ В канал (отправка)
+<-chan T   // данные ИДУТ ИЗ канала (получение)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый пример однонаправленных каналов
+
+```go
+package main
+
+import "fmt"
+
+// Функция только отправляет в канал
+func producer(ch chan<- int) {
+    for i := 1; i <= 5; i++ {
+        ch <- i
+    }
+    close(ch)
+}
+
+// Функция только читает из канала
+func consumer(ch <-chan int) {
+    for num := range ch {
+        fmt.Println("Received:", num)
+    }
+}
+
+func main() {
+    ch := make(chan int)  // двунаправленный
+    
+    go producer(ch)  // передаём как send-only
+    consumer(ch)     // передаём как receive-only
+}
+```
+
+### Типобезопасность
+
+```go
+package main
+
+import "fmt"
+
+func sendOnly(ch chan<- int) {
+    ch <- 42
+    
+    // ❌ ОШИБКА КОМПИЛЯЦИИ
+    // val := <-ch  // invalid operation: cannot receive from send-only channel
+}
+
+func receiveOnly(ch <-chan int) {
+    val := <-ch
+    fmt.Println(val)
+    
+    // ❌ ОШИБКА КОМПИЛЯЦИИ
+    // ch <- 42  // invalid operation: cannot send to receive-only channel
+}
+
+func main() {
+    ch := make(chan int, 1)
+    
+    go sendOnly(ch)
+    receiveOnly(ch)
+}
+```
+
+### Возврат однонаправленного канала
+
+```go
+package main
+
+import "fmt"
+
+// Возвращаем канал только для чтения
+func counter(max int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        for i := 1; i <= max; i++ {
+            ch <- i
+        }
+        close(ch)
+    }()
+    
+    return ch  // преобразуется в <-chan int
+}
+
+func main() {
+    nums := counter(5)
+    
+    // Можем только читать
+    for n := range nums {
+        fmt.Println(n)
+    }
+    
+    // ❌ ОШИБКА: cannot send to receive-only channel
+    // nums <- 10
+}
+```
+
+### Pipeline с однонаправленными каналами
+
+```go
+package main
+
+import "fmt"
+
+// Генератор — возвращает только для чтения
+func generate(nums ...int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for _, n := range nums {
+            out <- n
+        }
+    }()
+    return out
+}
+
+// Квадрат — принимает для чтения, возвращает для чтения
+func square(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        defer close(out)
+        for n := range in {
+            out <- n * n
+        }
+    }()
+    return out
+}
+
+// Принтер — только читает
+func print(in <-chan int) {
+    for n := range in {
+        fmt.Println(n)
+    }
+}
+
+func main() {
+    nums := generate(1, 2, 3, 4, 5)
+    squared := square(nums)
+    print(squared)
+}
+```
+
+### Паттерн: Fan-Out / Fan-In
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+// Fan-Out: один вход, несколько обработчиков
+func worker(id int, jobs <-chan int, results chan<- int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    for job := range jobs {
+        fmt.Printf("Worker %d processing job %d\n", id, job)
+        results <- job * 2
+    }
+}
+
+func main() {
+    jobs := make(chan int, 10)
+    results := make(chan int, 10)
+    
+    var wg sync.WaitGroup
+    
+    // Запускаем 3 воркера (Fan-Out)
+    for w := 1; w <= 3; w++ {
+        wg.Add(1)
+        go worker(w, jobs, results, &wg)
+    }
+    
+    // Отправляем задачи
+    for j := 1; j <= 9; j++ {
+        jobs <- j
+    }
+    close(jobs)
+    
+    // Ждём завершения воркеров
+    go func() {
+        wg.Wait()
+        close(results)
+    }()
+    
+    // Собираем результаты (Fan-In)
+    for result := range results {
+        fmt.Println("Result:", result)
+    }
+}
+```
+
+### Паттерн: Merge каналов
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+// Объединяет несколько каналов в один
+func merge(channels ...<-chan int) <-chan int {
+    var wg sync.WaitGroup
+    merged := make(chan int)
+    
+    // Функция для пересылки данных
+    forward := func(ch <-chan int) {
+        defer wg.Done()
+        for val := range ch {
+            merged <- val
+        }
+    }
+    
+    wg.Add(len(channels))
+    for _, ch := range channels {
+        go forward(ch)
+    }
+    
+    // Закрываем merged когда все входные закрыты
+    go func() {
+        wg.Wait()
+        close(merged)
+    }()
+    
+    return merged
+}
+
+func main() {
+    ch1 := make(chan int)
+    ch2 := make(chan int)
+    ch3 := make(chan int)
+    
+    go func() { ch1 <- 1; ch1 <- 2; close(ch1) }()
+    go func() { ch2 <- 3; ch2 <- 4; close(ch2) }()
+    go func() { ch3 <- 5; ch3 <- 6; close(ch3) }()
+    
+    for val := range merge(ch1, ch2, ch3) {
+        fmt.Println(val)
+    }
+}
+```
+
+### Практический пример: Logger
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type LogEntry struct {
+    Level   string
+    Message string
+    Time    time.Time
+}
+
+// Возвращаем канал только для отправки (логгер)
+// и канал только для чтения (потребитель логов)
+func NewLogger() (chan<- LogEntry, <-chan LogEntry) {
+    ch := make(chan LogEntry, 100)
+    return ch, ch  // один канал — два интерфейса
+}
+
+func main() {
+    logIn, logOut := NewLogger()
+    
+    // Потребитель логов
+    go func() {
+        for entry := range logOut {
+            fmt.Printf("[%s] %s: %s\n", 
+                entry.Time.Format("15:04:05"),
+                entry.Level, 
+                entry.Message)
+        }
+    }()
+    
+    // Отправляем логи
+    logIn <- LogEntry{Level: "INFO", Message: "Starting...", Time: time.Now()}
+    logIn <- LogEntry{Level: "DEBUG", Message: "Processing", Time: time.Now()}
+    logIn <- LogEntry{Level: "ERROR", Message: "Something failed", Time: time.Now()}
+    
+    close(logIn)
+    time.Sleep(100 * time.Millisecond)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Создание только однонаправленного канала
+
+```go
+// ❌ Бессмысленно — некуда отправлять данные
+ch := make(<-chan int)
+
+// ❌ Бессмысленно — неоткуда получать данные  
+ch := make(chan<- int)
+
+// ✅ Создаём двунаправленный, используем как однонаправленный
+ch := make(chan int)
+var readOnly <-chan int = ch
+var writeOnly chan<- int = ch
+```
+
+### 2. Попытка закрыть receive-only канал
+
+```go
+func process(ch <-chan int) {
+    for range ch {}
+    // ❌ ОШИБКА: cannot close receive-only channel
+    // close(ch)
+}
+
+// ✅ Закрывать должен отправитель
+func producer(ch chan<- int) {
+    ch <- 42
+    close(ch)  // OK
+}
+```
+
+### 3. Неправильное направление
+
+```go
+// ❌ Стрелка не с той стороны
+func wrong(ch <-chan int) {
+    ch <- 42  // cannot send to receive-only
+}
+
+// ✅ Правильно
+func right(ch chan<- int) {
+    ch <- 42
+}
+```
+
+### 4. Путаница с синтаксисом
+
+```go
+// Чтение из канала
+val := <-ch
+
+// Тип канала для чтения
+func f(ch <-chan int)  // пробел между <- и chan!
+
+// НЕ ТО ЖЕ САМОЕ
+<-chan int   // тип канала
+<-ch         // операция чтения
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: strings.Contains</Title>
+<Prompt>
+Проверьте наличие подстроки.
+</Prompt>
+<Hints>
+- import "strings"
+- Для регистронезависимого: ToLower
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    s := "Hello, Go!"
+    fmt.Println("Содержит 'Go':", strings.Contains(s, "Go"))
+    fmt.Println("Содержит 'Python':", strings.Contains(s, "Python"))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Содержит 'Go': true
+Содержит 'Python': false
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: strings.Split и Join</Title>
+<Prompt>
+Разделите и соедините строку.
+</Prompt>
+<Hints>
+- strings.Split("a,b,c", ",")
+- strings.Join([]string{...}, "-")
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    parts := strings.Split("a,b,c", ",")
+    fmt.Println("Части:", parts)
+    joined := strings.Join(parts, "-")
+    fmt.Println("Соединено:", joined)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Части: [a b c]
+Соединено: a-b-c
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: strings.Replace</Title>
+<Prompt>
+Замените подстроку в строке.
+</Prompt>
+<Hints>
+- Replace(s, "old", "new", -1)
+- ReplaceAll(s, "old", "new")
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    s := "hello world world"
+    fmt.Println("До:", s)
+    result := strings.ReplaceAll(s, "world", "Go")
+    fmt.Println("После:", result)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: hello world world
+После: hello Go Go
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: strings.TrimSpace</Title>
+<Prompt>
+Удалите пробелы по краям строки.
+</Prompt>
+<Hints>
+- strings.TrimSpace(s)
+- Включает \n, \t, пробелы
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    s := "  hello  "
+    fmt.Printf("До: '%s'\n", s)
+    fmt.Printf("После: '%s'\n", strings.TrimSpace(s))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: '  hello  '
+После: 'hello'
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: strings.Builder</Title>
+<Prompt>
+Используйте Builder для эффективной конкатенации.
+</Prompt>
+<Hints>
+- Эффективнее чем +
+- Не копирует при каждом добавлении
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    var b strings.Builder
+    b.WriteString("Hello")
+    b.WriteString(", ")
+    b.WriteString("World!")
+    fmt.Println("Результат:", b.String())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Результат: Hello, World!
+</ExpectedOutput>
+</Task>

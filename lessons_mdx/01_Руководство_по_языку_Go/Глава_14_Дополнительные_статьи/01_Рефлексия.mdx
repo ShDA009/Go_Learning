@@ -1,0 +1,671 @@
+# Рефлексия (reflect)
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Рефлексия** — исследование типов и значений во время выполнения
+2. **reflect.TypeOf** — получение типа переменной
+3. **reflect.ValueOf** — получение значения переменной
+4. **Kind** — базовый тип (int, string, struct, slice, etc.)
+5. **Применение** — сериализация, ORM, dependency injection
+</Overview>
+
+<Theory>
+### Что такое рефлексия?
+
+**Рефлексия** — способность программы исследовать и изменять свою структуру во время выполнения. Это как зеркало для кода.
+
+```go
+var x int = 42
+t := reflect.TypeOf(x)   // "int"
+v := reflect.ValueOf(x)  // 42
+```
+
+### Когда нужна рефлексия?
+
+- **Сериализация:** JSON, XML, YAML
+- **ORM:** маппинг структур на таблицы БД
+- **DI-контейнеры:** dependency injection
+- **Валидация:** по struct tags
+- **Универсальные функции:** работа с любыми типами
+
+### reflect.Type vs reflect.Value
+
+| Type | Value |
+|------|-------|
+| Описание типа | Конкретное значение |
+| Имя, поля, методы | Чтение/запись данных |
+| Не зависит от значения | Зависит от значения |
+
+### Kind — базовый тип
+
+```go
+type MyInt int
+var x MyInt = 42
+
+t := reflect.TypeOf(x)
+fmt.Println(t.Name())  // "MyInt" — имя типа
+fmt.Println(t.Kind())  // "int" — базовый вид
+```
+
+Kinds: `Bool`, `Int`, `String`, `Struct`, `Slice`, `Map`, `Ptr`, etc.
+
+### Исследование структуры
+
+```go
+type User struct {
+    Name string `json:"name"`
+    Age  int    `json:"age"`
+}
+
+user := User{"John", 30}
+t := reflect.TypeOf(user)
+
+for i := 0; i < t.NumField(); i++ {
+    field := t.Field(i)
+    fmt.Printf("%s: %s (tag: %s)\n", 
+        field.Name, 
+        field.Type, 
+        field.Tag.Get("json"))
+}
+// Name: string (tag: name)
+// Age: int (tag: age)
+```
+
+### Изменение значений
+
+Для изменения нужен **указатель** и `Elem()`:
+
+```go
+x := 42
+v := reflect.ValueOf(&x)  // указатель!
+v.Elem().SetInt(100)      // Elem() разыменовывает
+fmt.Println(x)            // 100
+```
+
+### CanSet — можно ли изменить?
+
+```go
+x := 42
+v1 := reflect.ValueOf(x)
+fmt.Println(v1.CanSet())  // false — копия
+
+v2 := reflect.ValueOf(&x).Elem()
+fmt.Println(v2.CanSet())  // true — оригинал
+```
+
+### Вызов методов
+
+```go
+type Calculator struct{}
+func (c Calculator) Add(a, b int) int { return a + b }
+
+calc := Calculator{}
+v := reflect.ValueOf(calc)
+method := v.MethodByName("Add")
+
+args := []reflect.Value{
+    reflect.ValueOf(10),
+    reflect.ValueOf(20),
+}
+result := method.Call(args)
+fmt.Println(result[0].Int())  // 30
+```
+
+### ⚠️ Рефлексия — это дорого!
+
+1. **Медленнее** обычного кода в 10-100 раз
+2. **Нет проверки типов** при компиляции
+3. **Сложнее читать** и поддерживать
+
+**Используйте только когда необходимо!**
+</Theory>
+
+<Syntax>
+### Основные функции
+
+```go
+// Получение типа
+reflect.TypeOf(v interface{}) reflect.Type
+
+// Получение значения
+reflect.ValueOf(v interface{}) reflect.Value
+```
+
+### Методы Type
+
+```go
+type.Name()           // имя типа
+type.Kind()           // базовый тип
+type.NumField()       // количество полей структуры
+type.Field(i)         // поле по индексу
+type.NumMethod()      // количество методов
+type.Method(i)        // метод по индексу
+```
+
+### Методы Value
+
+```go
+value.Type()          // тип значения
+value.Kind()          // базовый тип
+value.Interface()     // исходное значение
+value.NumField()      // количество полей
+value.Field(i)        // поле по индексу
+value.CanSet()        // можно ли изменить
+value.Set(v)          // установить значение
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Получение типа переменной
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func main() {
+    var x int = 42
+    var s string = "hello"
+    var f float64 = 3.14
+    
+    fmt.Println("x type:", reflect.TypeOf(x))  // int
+    fmt.Println("s type:", reflect.TypeOf(s))  // string
+    fmt.Println("f type:", reflect.TypeOf(f))  // float64
+    
+    // Срезы и map
+    slice := []int{1, 2, 3}
+    m := map[string]int{"a": 1}
+    
+    fmt.Println("slice type:", reflect.TypeOf(slice))  // []int
+    fmt.Println("map type:", reflect.TypeOf(m))        // map[string]int
+}
+```
+
+### Исследование структуры
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type Person struct {
+    Name string
+    Age  int
+    City string
+}
+
+func main() {
+    p := Person{Name: "Tom", Age: 30, City: "Moscow"}
+    
+    t := reflect.TypeOf(p)
+    v := reflect.ValueOf(p)
+    
+    fmt.Println("Type:", t.Name())          // Person
+    fmt.Println("Kind:", t.Kind())          // struct
+    fmt.Println("Fields:", t.NumField())    // 3
+    
+    // Перебор полей
+    for i := 0; i < t.NumField(); i++ {
+        field := t.Field(i)
+        value := v.Field(i)
+        
+        fmt.Printf("Field %d: %s (%s) = %v\n", 
+            i, field.Name, field.Type, value.Interface())
+    }
+}
+// Output:
+// Type: Person
+// Kind: struct
+// Fields: 3
+// Field 0: Name (string) = Tom
+// Field 1: Age (int) = 30
+// Field 2: City (string) = Moscow
+```
+
+### Kind — базовый тип
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type MyInt int
+type MyString string
+
+func main() {
+    var x MyInt = 42
+    var s MyString = "hello"
+    
+    xType := reflect.TypeOf(x)
+    sType := reflect.TypeOf(s)
+    
+    // Name — имя пользовательского типа
+    fmt.Println("x Name:", xType.Name())   // MyInt
+    fmt.Println("s Name:", sType.Name())   // MyString
+    
+    // Kind — базовый тип
+    fmt.Println("x Kind:", xType.Kind())   // int
+    fmt.Println("s Kind:", sType.Kind())   // string
+}
+```
+
+### Изменение значений через рефлексию
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func main() {
+    x := 42
+    
+    // Нужен указатель для изменения!
+    v := reflect.ValueOf(&x).Elem()
+    
+    if v.CanSet() {
+        v.SetInt(100)
+    }
+    
+    fmt.Println("x:", x)  // 100
+}
+```
+
+### Изменение полей структуры
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    p := Person{Name: "Tom", Age: 30}
+    
+    // Передаём указатель
+    v := reflect.ValueOf(&p).Elem()
+    
+    // Изменяем поля
+    nameField := v.FieldByName("Name")
+    if nameField.CanSet() {
+        nameField.SetString("Alice")
+    }
+    
+    ageField := v.FieldByName("Age")
+    if ageField.CanSet() {
+        ageField.SetInt(25)
+    }
+    
+    fmt.Printf("%+v\n", p)  // {Name:Alice Age:25}
+}
+```
+
+### Работа с тегами структуры
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type User struct {
+    ID    int    `json:"id" db:"user_id"`
+    Name  string `json:"name" db:"user_name"`
+    Email string `json:"email" db:"email"`
+}
+
+func main() {
+    t := reflect.TypeOf(User{})
+    
+    for i := 0; i < t.NumField(); i++ {
+        field := t.Field(i)
+        
+        jsonTag := field.Tag.Get("json")
+        dbTag := field.Tag.Get("db")
+        
+        fmt.Printf("%s: json=%s, db=%s\n", field.Name, jsonTag, dbTag)
+    }
+}
+// Output:
+// ID: json=id, db=user_id
+// Name: json=name, db=user_name
+// Email: json=email, db=email
+```
+
+### Вызов методов через рефлексию
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type Calculator struct{}
+
+func (c Calculator) Add(a, b int) int {
+    return a + b
+}
+
+func (c Calculator) Multiply(a, b int) int {
+    return a * b
+}
+
+func main() {
+    calc := Calculator{}
+    v := reflect.ValueOf(calc)
+    
+    // Вызов метода Add
+    addMethod := v.MethodByName("Add")
+    args := []reflect.Value{
+        reflect.ValueOf(5),
+        reflect.ValueOf(3),
+    }
+    
+    result := addMethod.Call(args)
+    fmt.Println("5 + 3 =", result[0].Int())  // 8
+    
+    // Вызов метода Multiply
+    mulMethod := v.MethodByName("Multiply")
+    result = mulMethod.Call(args)
+    fmt.Println("5 * 3 =", result[0].Int())  // 15
+}
+```
+
+### Создание объектов через рефлексию
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    // Получаем тип
+    t := reflect.TypeOf(Person{})
+    
+    // Создаём новый экземпляр
+    v := reflect.New(t).Elem()
+    
+    // Устанавливаем значения
+    v.FieldByName("Name").SetString("Bob")
+    v.FieldByName("Age").SetInt(35)
+    
+    // Преобразуем обратно
+    person := v.Interface().(Person)
+    
+    fmt.Printf("%+v\n", person)  // {Name:Bob Age:35}
+}
+```
+
+### Универсальная функция печати структуры
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func PrintStruct(v interface{}) {
+    val := reflect.ValueOf(v)
+    typ := reflect.TypeOf(v)
+    
+    if typ.Kind() != reflect.Struct {
+        fmt.Println("Not a struct!")
+        return
+    }
+    
+    fmt.Printf("=== %s ===\n", typ.Name())
+    
+    for i := 0; i < typ.NumField(); i++ {
+        field := typ.Field(i)
+        value := val.Field(i)
+        
+        fmt.Printf("  %s: %v\n", field.Name, value.Interface())
+    }
+}
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+type Product struct {
+    ID    int
+    Title string
+    Price float64
+}
+
+func main() {
+    PrintStruct(Person{Name: "Alice", Age: 30})
+    fmt.Println()
+    PrintStruct(Product{ID: 1, Title: "Phone", Price: 999.99})
+}
+```
+
+### Проверка типа в runtime
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func TypeName(v interface{}) string {
+    t := reflect.TypeOf(v)
+    if t == nil {
+        return "nil"
+    }
+    return t.String()
+}
+
+func IsSlice(v interface{}) bool {
+    return reflect.TypeOf(v).Kind() == reflect.Slice
+}
+
+func IsMap(v interface{}) bool {
+    return reflect.TypeOf(v).Kind() == reflect.Map
+}
+
+func main() {
+    fmt.Println(TypeName(42))           // int
+    fmt.Println(TypeName("hello"))      // string
+    fmt.Println(TypeName([]int{1,2}))   // []int
+    
+    fmt.Println(IsSlice([]int{1,2}))    // true
+    fmt.Println(IsSlice("hello"))       // false
+    
+    fmt.Println(IsMap(map[string]int{})) // true
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Изменение без указателя
+
+```go
+// ❌ Не сработает
+x := 42
+v := reflect.ValueOf(x)
+v.SetInt(100)  // panic: reflect.Value.SetInt using unaddressable value
+
+// ✅ Используйте указатель
+v := reflect.ValueOf(&x).Elem()
+v.SetInt(100)  // OK
+```
+
+### 2. Неэкспортируемые поля
+
+```go
+type Person struct {
+    name string  // маленькая буква - неэкспортируемое
+    Age  int
+}
+
+// ❌ Нельзя изменить неэкспортируемое поле
+v.FieldByName("name").SetString("New")  // panic
+
+// ✅ Используйте экспортируемые поля (с большой буквы)
+```
+
+### 3. Производительность
+
+```go
+// ❌ Рефлексия медленная в критичных местах
+for i := 0; i < 1000000; i++ {
+    reflect.TypeOf(x)  // медленно
+}
+
+// ✅ Кэшируйте результаты
+t := reflect.TypeOf(x)
+for i := 0; i < 1000000; i++ {
+    // используйте t
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Echo framework</Title>
+<Prompt>
+Используйте Echo framework.
+</Prompt>
+<Hints>
+- import "github.com/labstack/echo/v4"
+- e.Start(":8080")
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Echo: e := echo.New(); e.GET(\"/\", handler)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Echo: e := echo.New(); e.GET("/", handler)
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Echo Context</Title>
+<Prompt>
+Работайте с echo.Context.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Context: c.JSON(200, data), c.String(200, \"text\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Context: c.JSON(200, data), c.String(200, "text")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Echo параметры</Title>
+<Prompt>
+Получите параметры запроса.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Параметры: c.Param(\"id\"), c.QueryParam(\"name\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Параметры: c.Param("id"), c.QueryParam("name")
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Echo Bind</Title>
+<Prompt>
+Привяжите данные к структуре.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Bind: c.Bind(&data)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Bind: c.Bind(&data)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Echo middleware</Title>
+<Prompt>
+Используйте встроенные middleware.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Middleware: e.Use(middleware.Logger(), middleware.Recover())")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Middleware: e.Use(middleware.Logger(), middleware.Recover())
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,720 @@
+# Множественная реализация интерфейсов
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Множественная реализация** — один тип может реализовывать несколько интерфейсов
+2. **Композиция интерфейсов** — интерфейс может включать другие интерфейсы
+3. **Встраивание интерфейсов** — аналог "наследования" в Go
+4. **Маленькие интерфейсы** — предпочтительнее больших (принцип Interface Segregation)
+5. **Стандартная библиотека** — активно использует композицию интерфейсов
+</Overview>
+
+<Theory>
+### Один тип — много интерфейсов
+
+В Go тип автоматически реализует интерфейс, если имеет все его методы. Это позволяет одному типу реализовывать множество интерфейсов одновременно:
+
+```go
+type Dog struct{}
+
+func (d Dog) Walk() {}   // реализует Walker
+func (d Dog) Speak() {}  // реализует Speaker
+func (d Dog) Eat() {}    // реализует Eater
+```
+
+`Dog` одновременно является `Walker`, `Speaker` и `Eater`.
+
+### Композиция vs Наследование
+
+В ООП-языках используется наследование:
+```java
+class ReadWriteFile extends Reader, Writer {} // Java
+```
+
+В Go — **композиция** интерфейсов:
+```go
+type ReadWriter interface {
+    Reader  // встраивание
+    Writer
+}
+```
+
+### Принцип Interface Segregation
+
+**Маленькие интерфейсы лучше больших:**
+
+```go
+// ПЛОХО — большой интерфейс
+type Animal interface {
+    Walk()
+    Swim()
+    Fly()
+    Speak()
+    Eat()
+}
+// Собака не летает, рыба не ходит...
+
+// ХОРОШО — маленькие интерфейсы
+type Walker interface { Walk() }
+type Swimmer interface { Swim() }
+type Flyer interface { Fly() }
+```
+
+Стандартная библиотека Go следует этому принципу:
+- `io.Reader` — 1 метод
+- `io.Writer` — 1 метод  
+- `io.ReadWriter` — композиция двух
+
+### Встраивание в действии
+
+```go
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+type Closer interface {
+    Close() error
+}
+
+// Комбинации
+type ReadWriter interface {
+    Reader
+    Writer
+}
+
+type ReadWriteCloser interface {
+    Reader
+    Writer
+    Closer
+}
+```
+
+### Зачем это нужно?
+
+**Гибкость функций:**
+```go
+// Функция принимает только то, что нужно
+func Copy(dst Writer, src Reader) {
+    // работает с любыми Reader и Writer
+}
+```
+
+**Тестирование:**
+```go
+// Легко создать мок для маленького интерфейса
+type mockReader struct{}
+func (m mockReader) Read(p []byte) (int, error) {
+    return 0, io.EOF
+}
+```
+
+### Примеры из стандартной библиотеки
+
+```go
+// io.Copy работает с Reader и Writer
+io.Copy(os.Stdout, file)
+io.Copy(file, strings.NewReader("hello"))
+io.Copy(httpResponse, gzipReader)
+```
+
+Один интерфейс — множество реализаций!
+</Theory>
+
+<Syntax>
+### Тип реализует несколько интерфейсов
+
+```go
+type Reader interface { Read() }
+type Writer interface { Write() }
+
+type File struct{}
+func (f File) Read() {}   // реализует Reader
+func (f File) Write() {}  // реализует Writer
+
+// File реализует ОБА интерфейса
+```
+
+### Композиция интерфейсов
+
+```go
+type ReadWriter interface {
+    Reader  // встраивание
+    Writer  // встраивание
+}
+
+// Эквивалентно:
+type ReadWriter interface {
+    Read()
+    Write()
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Тип реализует несколько интерфейсов
+
+```go
+package main
+
+import "fmt"
+
+// Отдельные интерфейсы
+type Runner interface {
+    Run()
+}
+
+type Swimmer interface {
+    Swim()
+}
+
+type Flyer interface {
+    Fly()
+}
+
+// Структура реализует несколько интерфейсов
+type Duck struct {
+    Name string
+}
+
+func (d Duck) Run()  { fmt.Println(d.Name, "runs") }
+func (d Duck) Swim() { fmt.Println(d.Name, "swims") }
+func (d Duck) Fly()  { fmt.Println(d.Name, "flies") }
+
+// Функции принимают разные интерфейсы
+func MakeRun(r Runner)   { r.Run() }
+func MakeSwim(s Swimmer) { s.Swim() }
+func MakeFly(f Flyer)    { f.Fly() }
+
+func main() {
+    duck := Duck{Name: "Donald"}
+    
+    // Duck подходит для всех функций
+    MakeRun(duck)
+    MakeSwim(duck)
+    MakeFly(duck)
+    
+    // Можно присвоить любому интерфейсу
+    var r Runner = duck
+    var s Swimmer = duck
+    var f Flyer = duck
+    
+    r.Run()
+    s.Swim()
+    f.Fly()
+}
+```
+
+### Композиция интерфейсов
+
+```go
+package main
+
+import "fmt"
+
+// Базовые интерфейсы
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+type Closer interface {
+    Close() error
+}
+
+// Комбинированные интерфейсы
+type ReadWriter interface {
+    Reader
+    Writer
+}
+
+type ReadCloser interface {
+    Reader
+    Closer
+}
+
+type WriteCloser interface {
+    Writer
+    Closer
+}
+
+type ReadWriteCloser interface {
+    Reader
+    Writer
+    Closer
+}
+
+// Реализация всех методов
+type File struct {
+    name string
+}
+
+func (f *File) Read(p []byte) (int, error) {
+    fmt.Println("Reading from", f.name)
+    return len(p), nil
+}
+
+func (f *File) Write(p []byte) (int, error) {
+    fmt.Println("Writing to", f.name)
+    return len(p), nil
+}
+
+func (f *File) Close() error {
+    fmt.Println("Closing", f.name)
+    return nil
+}
+
+func main() {
+    file := &File{name: "data.txt"}
+    
+    // File реализует все комбинированные интерфейсы
+    var rw ReadWriter = file
+    var rc ReadCloser = file
+    var rwc ReadWriteCloser = file
+    
+    rw.Read(nil)
+    rw.Write(nil)
+    
+    rc.Read(nil)
+    rc.Close()
+    
+    rwc.Read(nil)
+    rwc.Write(nil)
+    rwc.Close()
+}
+```
+
+### Практический пример: Хранилище данных
+
+```go
+package main
+
+import "fmt"
+
+// Маленькие специализированные интерфейсы
+type Saver interface {
+    Save(data string) error
+}
+
+type Loader interface {
+    Load(id string) (string, error)
+}
+
+type Deleter interface {
+    Delete(id string) error
+}
+
+// Комбинированный интерфейс
+type Storage interface {
+    Saver
+    Loader
+    Deleter
+}
+
+// In-memory хранилище
+type MemoryStorage struct {
+    data map[string]string
+}
+
+func NewMemoryStorage() *MemoryStorage {
+    return &MemoryStorage{data: make(map[string]string)}
+}
+
+func (m *MemoryStorage) Save(data string) error {
+    id := fmt.Sprintf("id_%d", len(m.data))
+    m.data[id] = data
+    fmt.Println("Saved with id:", id)
+    return nil
+}
+
+func (m *MemoryStorage) Load(id string) (string, error) {
+    if val, ok := m.data[id]; ok {
+        return val, nil
+    }
+    return "", fmt.Errorf("not found: %s", id)
+}
+
+func (m *MemoryStorage) Delete(id string) error {
+    delete(m.data, id)
+    return nil
+}
+
+// Функции могут принимать минимально необходимый интерфейс
+func SaveData(s Saver, data string) {
+    s.Save(data)
+}
+
+func LoadData(l Loader, id string) {
+    data, _ := l.Load(id)
+    fmt.Println("Loaded:", data)
+}
+
+func main() {
+    storage := NewMemoryStorage()
+    
+    // Используем через разные интерфейсы
+    SaveData(storage, "Hello")
+    SaveData(storage, "World")
+    
+    LoadData(storage, "id_0")
+    
+    // Или через полный интерфейс
+    var s Storage = storage
+    s.Save("Full interface")
+    data, _ := s.Load("id_2")
+    fmt.Println(data)
+}
+```
+
+### Интерфейс со своими методами и встроенными
+
+```go
+package main
+
+import "fmt"
+
+type Printer interface {
+    Print()
+}
+
+type Scanner interface {
+    Scan()
+}
+
+// Комбинация + собственный метод
+type MultiFunctionDevice interface {
+    Printer
+    Scanner
+    Copy()  // собственный метод
+}
+
+type OfficePrinter struct {
+    Model string
+}
+
+func (p OfficePrinter) Print() { fmt.Println(p.Model, "printing...") }
+func (p OfficePrinter) Scan()  { fmt.Println(p.Model, "scanning...") }
+func (p OfficePrinter) Copy()  { fmt.Println(p.Model, "copying...") }
+
+func main() {
+    device := OfficePrinter{Model: "HP LaserJet"}
+    
+    var mfd MultiFunctionDevice = device
+    mfd.Print()
+    mfd.Scan()
+    mfd.Copy()
+    
+    // Также можно использовать как отдельные интерфейсы
+    var printer Printer = device
+    printer.Print()
+}
+```
+
+### Интерфейсы из стандартной библиотеки
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "strings"
+)
+
+// io.Reader — интерфейс для чтения
+// io.Writer — интерфейс для записи
+// io.ReadWriter — комбинация
+
+type MyBuffer struct {
+    data []byte
+}
+
+func (b *MyBuffer) Read(p []byte) (int, error) {
+    if len(b.data) == 0 {
+        return 0, io.EOF
+    }
+    n := copy(p, b.data)
+    b.data = b.data[n:]
+    return n, nil
+}
+
+func (b *MyBuffer) Write(p []byte) (int, error) {
+    b.data = append(b.data, p...)
+    return len(p), nil
+}
+
+func main() {
+    buf := &MyBuffer{}
+    
+    // Работает как io.Writer
+    io.WriteString(buf, "Hello, ")
+    io.WriteString(buf, "World!")
+    
+    // Работает как io.Reader
+    data, _ := io.ReadAll(buf)
+    fmt.Println(string(data))  // Hello, World!
+    
+    // strings.Reader реализует io.Reader
+    reader := strings.NewReader("Go is awesome")
+    content, _ := io.ReadAll(reader)
+    fmt.Println(string(content))
+}
+```
+
+### Проверка реализации интерфейса на этапе компиляции
+
+```go
+package main
+
+import "fmt"
+
+type Stringer interface {
+    String() string
+}
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) String() string {
+    return fmt.Sprintf("%s (%d)", p.Name, p.Age)
+}
+
+// Проверка на этапе компиляции
+var _ Stringer = Person{}      // OK
+var _ Stringer = (*Person)(nil) // OK — указатель тоже работает
+
+// var _ Stringer = int(0)  // ❌ Ошибка компиляции
+
+func main() {
+    p := Person{Name: "Alice", Age: 30}
+    fmt.Println(p.String())
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Слишком большие интерфейсы
+
+```go
+// ❌ ПЛОХО — интерфейс слишком большой
+type UserService interface {
+    Create()
+    Read()
+    Update()
+    Delete()
+    List()
+    Search()
+    Validate()
+    Authenticate()
+    // ... ещё 20 методов
+}
+
+// ✅ ХОРОШО — маленькие специализированные интерфейсы
+type UserCreator interface { Create() }
+type UserReader interface { Read() }
+type UserUpdater interface { Update() }
+type UserDeleter interface { Delete() }
+
+// При необходимости — композиция
+type UserCRUD interface {
+    UserCreator
+    UserReader
+    UserUpdater
+    UserDeleter
+}
+```
+
+### 2. Дублирование методов при встраивании
+
+```go
+type A interface {
+    Method()
+}
+
+type B interface {
+    Method()  // тот же метод
+}
+
+// ⚠️ Работает, но метод Method() требуется только один раз
+type C interface {
+    A
+    B
+}
+```
+
+### 3. Забыли реализовать все методы комбинированного интерфейса
+
+```go
+type ReadWriter interface {
+    Read()
+    Write()
+}
+
+type MyType struct{}
+func (m MyType) Read() {}
+// Забыли Write()!
+
+// ❌ ОШИБКА
+// var rw ReadWriter = MyType{}
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: select с двумя каналами</Title>
+<Prompt>
+Используйте select для выбора из каналов.
+</Prompt>
+<Hints>
+- select { case v := <-ch1: ... case v := <-ch2: ... }
+- Если оба готовы — случайный выбор
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+// TODO: Используйте select для работы с каналами
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Получено сообщение
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: select с default</Title>
+<Prompt>
+Используйте default для неблокирующей операции.
+</Prompt>
+<Hints>
+- default: ... — без блокировки
+- Проверка без ожидания
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Канал пуст
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: select с timeout</Title>
+<Prompt>
+Реализуйте timeout через select и time.After.
+</Prompt>
+<Hints>
+- <-time.After(100*time.Millisecond)
+- Первый готовый канал выигрывает
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+// TODO: Создайте и используйте канал
+// TODO: Используйте select для работы с каналами
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Timeout!
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: select для отправки</Title>
+<Prompt>
+Используйте select для неблокирующей отправки.
+</Prompt>
+<Hints>
+- Буферизированный канал
+- Полный буфер блокирует без default
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+// TODO: Используйте select для работы с каналами
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Буфер полон, отправка не удалась
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Мультиплексирование каналов</Title>
+<Prompt>
+Объедините несколько каналов в один через select в цикле.
+</Prompt>
+<Hints>
+- break для выхода из for
+- Использование counter
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+// TODO: Используйте select для работы с каналами
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Получено 2 сообщения
+</ExpectedOutput>
+</Task>

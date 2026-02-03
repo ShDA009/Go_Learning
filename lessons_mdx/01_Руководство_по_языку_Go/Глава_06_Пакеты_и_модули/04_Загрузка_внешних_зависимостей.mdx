@@ -1,0 +1,619 @@
+# Загрузка внешних зависимостей в Go
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **Внешние зависимости** — сторонние библиотеки для расширения функциональности
+2. **go get** — команда для загрузки и установки зависимостей
+3. **Автоматическое обновление** — go.mod и go.sum обновляются автоматически
+4. **Локальный кеш** — пакеты хранятся в $GOMODCACHE (обычно ~/go/pkg/mod)
+5. **go mod tidy** — синхронизация зависимостей с кодом
+</Overview>
+
+<Theory>
+### Что такое внешние зависимости?
+
+**Внешние зависимости** — это код, написанный другими разработчиками, который вы используете в своём проекте. Например:
+- `github.com/gin-gonic/gin` — веб-фреймворк
+- `github.com/lib/pq` — драйвер PostgreSQL
+- `github.com/stretchr/testify` — библиотека для тестирования
+
+### Откуда Go берёт пакеты?
+
+Go скачивает пакеты напрямую из **репозиториев**:
+- GitHub, GitLab, Bitbucket
+- Собственные серверы
+
+Путь импорта = URL репозитория:
+```go
+import "github.com/gin-gonic/gin"
+```
+
+### go get — загрузка зависимостей
+
+```bash
+# Загрузить последнюю версию
+go get github.com/gin-gonic/gin
+
+# Конкретная версия
+go get github.com/gin-gonic/gin@v1.9.1
+
+# Последняя версия
+go get github.com/gin-gonic/gin@latest
+
+# Определённый коммит
+go get github.com/gin-gonic/gin@abc1234
+```
+
+### Где хранятся зависимости?
+
+В **локальном кеше**: `$GOMODCACHE` (обычно `~/go/pkg/mod`).
+
+Зависимости **не копируются** в проект (как в node_modules). Все проекты используют общий кеш.
+
+### go mod tidy — уборка
+
+`go mod tidy` делает две вещи:
+1. **Добавляет** недостающие зависимости
+2. **Удаляет** неиспользуемые
+
+```bash
+go mod tidy
+```
+
+Запускайте после:
+- Добавления нового импорта
+- Удаления кода
+- Клонирования проекта
+
+### Версионирование (SemVer)
+
+Go использует семантическое версионирование: `vMAJOR.MINOR.PATCH`
+
+```
+v1.2.3
+│ │ │
+│ │ └── Patch: багфиксы (совместимо)
+│ └──── Minor: новые функции (совместимо)
+└────── Major: ломающие изменения (несовместимо)
+```
+
+**v2+** требует суффикс в пути:
+```go
+import "github.com/lib/pq/v2"
+```
+
+### Проверка зависимостей
+
+```bash
+go list -m all        # все зависимости
+go mod graph          # граф зависимостей
+go mod verify         # проверка целостности
+go mod why -m pkg     # почему нужна зависимость
+```
+
+### Обновление зависимостей
+
+```bash
+go get -u ./...       # обновить все до последних
+go get -u=patch ./... # только patch-версии
+```
+
+⚠️ Будьте осторожны с major-обновлениями — они могут ломать код.
+</Theory>
+
+<Syntax>
+### Основные команды
+
+```bash
+# Загрузка зависимости
+go get путь_к_пакету
+
+# Конкретная версия
+go get путь_к_пакету@v1.2.3
+go get путь_к_пакету@latest
+
+# Обновление всех зависимостей
+go get -u ./...
+
+# Удаление неиспользуемых
+go mod tidy
+
+# Проверка зависимостей
+go list -m all
+go mod verify
+```
+
+### Формат версий
+
+```bash
+go get pkg@v1.2.3      # семантическая версия
+go get pkg@latest      # последняя стабильная
+go get pkg@master      # ветка
+go get pkg@abc1234     # коммит
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Шаг 1: Инициализация модуля
+
+```bash
+mkdir myproject
+cd myproject
+go mod init myproject
+```
+
+### Шаг 2: Добавление зависимости
+
+```bash
+# Добавляем популярную библиотеку для HTTP роутинга
+go get github.com/gin-gonic/gin
+```
+
+Вывод:
+```
+go: downloading github.com/gin-gonic/gin v1.9.1
+go: downloading github.com/gin-contrib/sse v0.1.0
+go: downloading github.com/mattn/go-isatty v0.0.19
+...
+go: added github.com/gin-gonic/gin v1.9.1
+```
+
+### Шаг 3: Использование в коде
+
+**main.go:**
+```go
+package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+    r := gin.Default()
+    
+    r.GET("/", func(c *gin.Context) {
+        c.JSON(200, gin.H{
+            "message": "Hello, World!",
+        })
+    })
+    
+    r.Run(":8080")
+}
+```
+
+### Обновлённый go.mod
+
+```go
+module myproject
+
+go 1.21
+
+require github.com/gin-gonic/gin v1.9.1
+
+require (
+    github.com/bytedance/sonic v1.9.1 // indirect
+    github.com/gin-contrib/sse v0.1.0 // indirect
+    github.com/go-playground/validator/v10 v10.14.0 // indirect
+    // ... другие косвенные зависимости
+)
+```
+
+### Примеры популярных библиотек
+
+#### HTTP клиент — resty
+
+```bash
+go get github.com/go-resty/resty/v2
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-resty/resty/v2"
+)
+
+func main() {
+    client := resty.New()
+    
+    resp, err := client.R().
+        SetHeader("Accept", "application/json").
+        Get("https://api.github.com/users/golang")
+    
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    
+    fmt.Println("Status:", resp.Status())
+    fmt.Println("Body:", string(resp.Body()))
+}
+```
+
+#### CLI приложения — cobra
+
+```bash
+go get github.com/spf13/cobra@latest
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/spf13/cobra"
+)
+
+func main() {
+    rootCmd := &cobra.Command{
+        Use:   "myapp",
+        Short: "My CLI application",
+        Run: func(cmd *cobra.Command, args []string) {
+            fmt.Println("Hello from CLI!")
+        },
+    }
+    
+    rootCmd.Execute()
+}
+```
+
+#### Логирование — zerolog
+
+```bash
+go get github.com/rs/zerolog
+```
+
+```go
+package main
+
+import (
+    "os"
+    "github.com/rs/zerolog"
+    "github.com/rs/zerolog/log"
+)
+
+func main() {
+    // Красивый вывод в консоль
+    log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+    
+    log.Info().Msg("Application started")
+    log.Debug().Str("user", "john").Msg("User logged in")
+    log.Error().Err(fmt.Errorf("connection failed")).Msg("Database error")
+}
+```
+
+#### Работа с JSON — gjson
+
+```bash
+go get github.com/tidwall/gjson
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/tidwall/gjson"
+)
+
+func main() {
+    json := `{
+        "name": {"first": "John", "last": "Doe"},
+        "age": 30,
+        "skills": ["Go", "Python", "JavaScript"]
+    }`
+    
+    name := gjson.Get(json, "name.first")
+    fmt.Println("First name:", name.String())
+    
+    age := gjson.Get(json, "age")
+    fmt.Println("Age:", age.Int())
+    
+    skill := gjson.Get(json, "skills.0")
+    fmt.Println("First skill:", skill.String())
+}
+```
+
+### Очистка неиспользуемых зависимостей
+
+```go
+// Было:
+package main
+
+import (
+    "fmt"
+    "github.com/gin-gonic/gin"
+)
+
+func main() {
+    r := gin.Default()
+    // ...
+}
+```
+
+```go
+// Стало (удалили gin):
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello")
+}
+```
+
+```bash
+# go.mod всё ещё содержит gin!
+# Удаляем неиспользуемое:
+go mod tidy
+
+# Теперь go.mod чистый
+```
+
+### Проверка и диагностика зависимостей
+
+```bash
+# Список всех зависимостей
+go list -m all
+
+# Почему нужна конкретная зависимость
+go mod why github.com/some/package
+
+# Доступные версии пакета
+go list -m -versions github.com/gin-gonic/gin
+
+# Граф зависимостей
+go mod graph
+
+# Проверка целостности
+go mod verify
+```
+
+### Обновление зависимостей
+
+```bash
+# Обновить конкретный пакет
+go get -u github.com/gin-gonic/gin
+
+# Обновить все зависимости
+go get -u ./...
+
+# Только патч-обновления (безопаснее)
+go get -u=patch ./...
+
+# После обновления — очистка
+go mod tidy
+```
+</Examples>
+
+<Pitfalls>
+### 1. Зависимость не загружается
+
+```bash
+# ❌ Ошибка
+go get github.com/nonexistent/package
+# go: module github.com/nonexistent/package: no matching versions
+
+# ✅ Проверьте:
+# - Правильность URL
+# - Наличие интернета
+# - Доступность репозитория (приватный?)
+```
+
+### 2. Конфликт версий
+
+```bash
+# ❌ Разные пакеты требуют разные версии
+require (
+    github.com/pkg/a v1.0.0  // требует dep v1.0
+    github.com/pkg/b v2.0.0  // требует dep v2.0
+)
+
+# ✅ Go выберет минимальную совместимую версию автоматически
+# Или используйте go mod tidy для разрешения
+```
+
+### 3. Забыли go mod tidy
+
+```go
+// ❌ Добавили import, но не загрузили пакет
+import "github.com/new/package"
+
+// Ошибка при сборке:
+// cannot find module providing package github.com/new/package
+
+// ✅ ПРАВИЛЬНО
+go mod tidy  // автоматически загрузит недостающее
+// или
+go get github.com/new/package
+```
+
+### 4. Использование старой версии
+
+```bash
+# ❌ Код требует новую функцию, но установлена старая версия
+# function XYZ not found
+
+# ✅ Обновите до нужной версии
+go get github.com/package@v2.0.0
+```
+
+### 5. Проблемы с приватными репозиториями
+
+```bash
+# ❌ Не удаётся загрузить приватный репозиторий
+go get github.com/mycompany/private-repo
+
+# ✅ Настройте GOPRIVATE
+go env -w GOPRIVATE=github.com/mycompany/*
+
+# И настройте git credentials
+git config --global url."git@github.com:".insteadOf "https://github.com/"
+```
+
+### 6. Кеш модулей занимает много места
+
+```bash
+# Посмотреть размер кеша
+du -sh $(go env GOMODCACHE)
+
+# Очистить кеш (осторожно!)
+go clean -modcache
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: os.Getenv</Title>
+<Prompt>
+Получите переменную окружения PATH.
+</Prompt>
+<Hints>
+- Возвращает пустую строку если нет
+- PATH есть во всех ОС
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    path := os.Getenv("PATH")
+    fmt.Println("PATH существует:", path != "")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+PATH существует: true
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: os.LookupEnv</Title>
+<Prompt>
+Используйте LookupEnv для проверки.
+</Prompt>
+<Hints>
+- Отличие от Getenv: можно отличить пустую от отсутствующей
+- _, ok := os.LookupEnv("KEY")
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+// TODO: Реализуйте решение согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+PATH: найден
+NONEXISTENT: не найден
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: filepath.Ext</Title>
+<Prompt>
+Получите расширение файла.
+</Prompt>
+<Hints>
+- import "path/filepath"
+- Включает точку: ".go"
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "path/filepath"
+)
+
+func main() {
+    fmt.Println("main.go:", filepath.Ext("main.go"))
+    fmt.Println("data.json:", filepath.Ext("data.json"))
+    ext := filepath.Ext("README")
+    if ext == "" { ext = "(пусто)" }
+    fmt.Println("README:", ext)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+main.go: .go
+data.json: .json
+README: (пусто)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: os.Args</Title>
+<Prompt>
+Выведите количество аргументов командной строки.
+</Prompt>
+<Hints>
+- len(os.Args) — количество
+- Минимум 1 (имя программы)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    fmt.Println("Аргументов:", len(os.Args))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Аргументов: 1
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: os.Hostname</Title>
+<Prompt>
+Получите имя хоста.
+</Prompt>
+<Hints>
+- Имя компьютера
+- Может вернуть ошибку
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    host, err := os.Hostname()
+    fmt.Println("Хост получен:", err == nil && host != "")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Хост получен: true
+</ExpectedOutput>
+</Task>

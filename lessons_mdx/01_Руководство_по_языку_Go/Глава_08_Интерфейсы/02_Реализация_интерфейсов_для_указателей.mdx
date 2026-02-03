@@ -1,0 +1,662 @@
+# Реализация интерфейсов для указателей структур
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Методы значения** — работают с копией, доступны и для значений, и для указателей
+2. **Методы указателя** — работают с оригиналом, доступны только для указателей
+3. **Реализация интерфейса** — зависит от типа получателя метода (значение или указатель)
+4. **Изменение состояния** — требует методов указателей
+5. **Go автоматически** берёт адрес при вызове метода, но не при присваивании интерфейсу
+</Overview>
+
+<Theory>
+### Методы значения vs Методы указателя
+
+Это одна из самых запутывающих тем в Go. Разберёмся!
+
+**Метод значения** — получатель копируется:
+```go
+func (p Person) Name() string {
+    return p.name  // работает с копией
+}
+```
+
+**Метод указателя** — получатель по ссылке:
+```go
+func (p *Person) SetName(name string) {
+    p.name = name  // изменяет оригинал
+}
+```
+
+### При вызове методов Go помогает
+
+Go автоматически преобразует при **прямом вызове**:
+
+```go
+person := Person{name: "John"}
+ptr := &person
+
+// Оба работают!
+person.SetName("Jane")  // Go делает (&person).SetName()
+ptr.Name()              // Go делает (*ptr).Name()
+```
+
+### При присваивании интерфейсу — не помогает!
+
+Вот где ловушка:
+
+```go
+type Namer interface {
+    Name() string
+}
+
+type Setter interface {
+    SetName(string)
+}
+
+person := Person{name: "John"}
+
+var n Namer = person   // OK! Метод Name() для значения
+var s Setter = person  // ОШИБКА! SetName() только для *Person
+var s Setter = &person // OK!
+```
+
+### Почему так?
+
+Интерфейсная переменная хранит **копию** значения. Если метод ожидает указатель для изменения — изменится копия, не оригинал. Go защищает от этой ошибки.
+
+### Правило для запоминания
+
+| Метод для | Реализует интерфейс для |
+|-----------|------------------------|
+| `T` (значение) | `T` и `*T` |
+| `*T` (указатель) | только `*T` |
+
+### Практическая рекомендация
+
+Если хоть один метод требует указатель — делайте **все** методы с указателем:
+
+```go
+// ✅ Консистентно
+func (p *Person) Name() string { return p.name }
+func (p *Person) SetName(n string) { p.name = n }
+func (p *Person) Age() int { return p.age }
+
+// Теперь только *Person реализует интерфейсы
+```
+
+### Когда использовать методы значения?
+
+- Структура маленькая и неизменяемая
+- Метод не должен изменять состояние
+- Нужна работа с копией (безопасность)
+</Theory>
+
+<Syntax>
+### Метод для значения
+
+```go
+func (t Type) Method() {}  // реализует интерфейс для Type и *Type
+```
+
+### Метод для указателя
+
+```go
+func (t *Type) Method() {}  // реализует интерфейс ТОЛЬКО для *Type
+```
+
+### Правило совместимости
+
+| Метод определён для | Вызов на значении | Вызов на указателе | Интерфейс для значения | Интерфейс для указателя |
+|---------------------|-------------------|--------------------|-----------------------|------------------------|
+| Значение (T)        | ✅                | ✅                 | ✅                    | ✅                     |
+| Указатель (*T)      | ✅*               | ✅                 | ❌                    | ✅                     |
+
+*Go автоматически берёт адрес при прямом вызове, но НЕ при присваивании интерфейсу
+</Syntax>
+
+<Examples>
+кода
+
+### Методы значения — работают везде
+
+```go
+package main
+
+import "fmt"
+
+type Reader interface {
+    Read() string
+}
+
+type File struct {
+    content string
+}
+
+// Метод для ЗНАЧЕНИЯ
+func (f File) Read() string {
+    return f.content
+}
+
+func PrintContent(r Reader) {
+    fmt.Println(r.Read())
+}
+
+func main() {
+    file := File{content: "Hello, World!"}
+    pointer := &file
+    
+    // Оба работают
+    PrintContent(file)     // OK — передаём значение
+    PrintContent(pointer)  // OK — передаём указатель
+    
+    // Прямой вызов тоже работает
+    fmt.Println(file.Read())
+    fmt.Println(pointer.Read())
+}
+```
+
+### Методы указателя — только для указателей
+
+```go
+package main
+
+import "fmt"
+
+type Writer interface {
+    Write(data string)
+}
+
+type File struct {
+    content string
+}
+
+// Метод для УКАЗАТЕЛЯ
+func (f *File) Write(data string) {
+    f.content = data
+}
+
+func SaveData(w Writer, data string) {
+    w.Write(data)
+}
+
+func main() {
+    file := File{}
+    pointer := &file
+    
+    // Только указатель работает с интерфейсом
+    SaveData(pointer, "Hello")  // OK
+    // SaveData(file, "Hello")  // ❌ ОШИБКА: File не реализует Writer
+    
+    // Но прямой вызов работает даже на значении!
+    file.Write("Direct call")  // Go автоматически берёт &file
+    fmt.Println(file.content)  // Direct call
+}
+```
+
+### Почему методы указателей?
+
+```go
+package main
+
+import "fmt"
+
+type Counter interface {
+    Increment()
+    Value() int
+}
+
+type MyCounter struct {
+    count int
+}
+
+// ❌ Метод значения — НЕ ИЗМЕНЯЕТ оригинал
+func (c MyCounter) IncrementWrong() {
+    c.count++  // изменяется только копия!
+}
+
+// ✅ Метод указателя — ИЗМЕНЯЕТ оригинал
+func (c *MyCounter) Increment() {
+    c.count++
+}
+
+func (c *MyCounter) Value() int {
+    return c.count
+}
+
+func main() {
+    c := &MyCounter{}  // указатель!
+    
+    c.Increment()
+    c.Increment()
+    c.Increment()
+    
+    fmt.Println("Count:", c.Value())  // 3
+}
+```
+
+### Демонстрация проблемы с значением
+
+```go
+package main
+
+import "fmt"
+
+type Editor interface {
+    SetText(text string)
+    GetText() string
+}
+
+type Document struct {
+    text string
+}
+
+// Методы для ЗНАЧЕНИЯ — SetText НЕ работает как ожидается!
+func (d Document) SetText(text string) {
+    d.text = text  // изменяется КОПИЯ
+}
+
+func (d Document) GetText() string {
+    return d.text
+}
+
+func main() {
+    doc := Document{text: "Original"}
+    
+    var editor Editor = doc  // копия doc
+    editor.SetText("Modified")
+    
+    fmt.Println(editor.GetText())  // "" (пустая строка!)
+    fmt.Println(doc.text)          // "Original" (не изменился)
+}
+```
+
+### Правильная версия с указателем
+
+```go
+package main
+
+import "fmt"
+
+type Editor interface {
+    SetText(text string)
+    GetText() string
+}
+
+type Document struct {
+    text string
+}
+
+// Методы для УКАЗАТЕЛЯ
+func (d *Document) SetText(text string) {
+    d.text = text  // изменяется оригинал
+}
+
+func (d *Document) GetText() string {
+    return d.text
+}
+
+func main() {
+    doc := &Document{text: "Original"}  // указатель!
+    
+    var editor Editor = doc
+    editor.SetText("Modified")
+    
+    fmt.Println(editor.GetText())  // "Modified"
+    fmt.Println(doc.text)          // "Modified"
+}
+```
+
+### Комбинация методов значения и указателя
+
+```go
+package main
+
+import "fmt"
+
+type Account interface {
+    Balance() float64    // чтение — можно значение
+    Deposit(amount float64)  // изменение — нужен указатель
+}
+
+type BankAccount struct {
+    balance float64
+}
+
+// Чтение — метод значения (безопасен для обоих)
+func (a BankAccount) Balance() float64 {
+    return a.balance
+}
+
+// Изменение — метод указателя
+func (a *BankAccount) Deposit(amount float64) {
+    a.balance += amount
+}
+
+func main() {
+    // Нужен указатель, т.к. Deposit определён для *BankAccount
+    account := &BankAccount{balance: 1000}
+    
+    var acc Account = account
+    acc.Deposit(500)
+    fmt.Println("Balance:", acc.Balance())  // 1500
+}
+```
+
+### Практический пример: Builder pattern
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+type StringBuilder interface {
+    Append(s string) StringBuilder
+    String() string
+}
+
+type MyBuilder struct {
+    parts []string
+}
+
+// Методы для указателя — изменяют состояние
+func (b *MyBuilder) Append(s string) StringBuilder {
+    b.parts = append(b.parts, s)
+    return b  // возвращаем указатель для цепочки
+}
+
+func (b *MyBuilder) String() string {
+    return strings.Join(b.parts, "")
+}
+
+func main() {
+    var builder StringBuilder = &MyBuilder{}
+    
+    builder.Append("Hello").Append(" ").Append("World").Append("!")
+    
+    fmt.Println(builder.String())  // Hello World!
+}
+```
+
+### Nil указатель и интерфейс
+
+```go
+package main
+
+import "fmt"
+
+type Printer interface {
+    Print()
+}
+
+type Document struct {
+    title string
+}
+
+func (d *Document) Print() {
+    if d == nil {
+        fmt.Println("<nil document>")
+        return
+    }
+    fmt.Println("Document:", d.title)
+}
+
+func main() {
+    var doc *Document = nil
+    
+    // Интерфейс с nil указателем — НЕ nil интерфейс!
+    var p Printer = doc
+    
+    fmt.Println(p == nil)  // false (!!)
+    
+    // Но вызов метода работает
+    p.Print()  // <nil document>
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Передача значения когда нужен указатель
+
+```go
+type Saver interface {
+    Save()
+}
+
+type Data struct{}
+func (d *Data) Save() {}
+
+data := Data{}
+
+// ❌ ОШИБКА
+var s Saver = data  // Data does not implement Saver
+
+// ✅ ПРАВИЛЬНО
+var s Saver = &data
+```
+
+### 2. Методы значения не изменяют состояние
+
+```go
+type Counter struct {
+    value int
+}
+
+// ❌ НЕ изменяет оригинал
+func (c Counter) Increment() {
+    c.value++  // изменяется копия
+}
+
+// ✅ Изменяет оригинал
+func (c *Counter) Increment() {
+    c.value++
+}
+```
+
+### 3. Путаница с автоматическим взятием адреса
+
+```go
+type Doer interface {
+    Do()
+}
+
+type Task struct{}
+func (t *Task) Do() {}
+
+task := Task{}
+
+// ✅ Прямой вызов работает
+task.Do()  // Go автоматически делает (&task).Do()
+
+// ❌ Присваивание интерфейсу НЕ работает
+// var d Doer = task  // ОШИБКА
+
+// ✅ Нужен явный указатель
+var d Doer = &task
+```
+
+### 4. Nil указатель в интерфейсе
+
+```go
+type Handler interface {
+    Handle()
+}
+
+type MyHandler struct{}
+func (h *MyHandler) Handle() {}
+
+var h *MyHandler = nil
+var handler Handler = h
+
+// ⚠️ handler != nil, хотя h == nil!
+if handler != nil {
+    handler.Handle()  // может вызвать проблемы внутри метода
+}
+
+// ✅ Проверяйте nil внутри метода
+func (h *MyHandler) Handle() {
+    if h == nil {
+        return
+    }
+    // ...
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Создание канала</Title>
+<Prompt>
+Создайте канал и отправьте/получите значение.
+</Prompt>
+<Hints>
+- Небуферизированный канал блокирует
+- Отправка и получение в разных горутинах
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+// TODO: Создайте и используйте канал
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Получено: 42
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Буферизированный канал</Title>
+<Prompt>
+Создайте канал с буфером.
+</Prompt>
+<Hints>
+- Буфер позволяет отправлять без ожидания получателя
+- len(ch) — занято, cap(ch) — ёмкость
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Отправлено 3 значения
+Получено: 1 2 3
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Закрытие канала</Title>
+<Prompt>
+Закройте канал и обработайте это.
+</Prompt>
+<Hints>
+- v, ok := <-ch — ok=false если закрыт
+- range автоматически останавливается
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Значения: 1 2 3
+Канал закрыт
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Однонаправленные каналы</Title>
+<Prompt>
+Используйте chan<- и <-chan для типизации.
+</Prompt>
+<Hints>
+- func send(ch chan<- int) {...}
+- Компилятор проверяет направление
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Создайте и используйте канал
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Отправитель отправил: 100
+Получатель получил: 100
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Канал для синхронизации</Title>
+<Prompt>
+Используйте канал для ожидания завершения.
+</Prompt>
+<Hints>
+- Пустой struct{} экономит память
+- Канал как семафор
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте и используйте канал
+// TODO: Определите структуру
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Работа началась
+Работа завершена
+Всё готово
+</ExpectedOutput>
+</Task>

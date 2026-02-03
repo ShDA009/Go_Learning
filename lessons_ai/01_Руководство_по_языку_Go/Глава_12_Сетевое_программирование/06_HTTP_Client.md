@@ -38,6 +38,133 @@ req, err := http.NewRequestWithContext(ctx, method, url, body)
 client.Get(url)              // GET
 client.Post(url, type, body) // POST
 client.PostForm(url, data)   // POST form
+client.Do(req)               // любой запрос
+```
+
+---
+
+## 📖 Теория
+
+### Зачем нужен http.Client?
+
+`http.Get()` и `http.Post()` используют глобальный `http.DefaultClient`. Для production кода создайте свой клиент:
+
+```go
+client := &http.Client{
+    Timeout: 30 * time.Second,
+}
+```
+
+### Основные настройки Client
+
+```go
+client := &http.Client{
+    Timeout:       30 * time.Second,  // общий таймаут
+    Transport:     customTransport,    // настройки соединений
+    CheckRedirect: customRedirect,     // поведение редиректов
+    Jar:           cookieJar,          // управление cookies
+}
+```
+
+### Таймаут — ОБЯЗАТЕЛЬНО!
+
+По умолчанию таймаут **бесконечный**. Это опасно!
+
+```go
+// ПЛОХО — может висеть вечно
+http.Get("https://slow-server.com")
+
+// ХОРОШО — таймаут 10 секунд
+client := &http.Client{Timeout: 10 * time.Second}
+client.Get("https://slow-server.com")
+```
+
+### http.Request — полный контроль
+
+```go
+req, err := http.NewRequest("GET", url, nil)
+if err != nil {
+    return err
+}
+
+// Добавляем заголовки
+req.Header.Set("Authorization", "Bearer token123")
+req.Header.Set("Content-Type", "application/json")
+req.Header.Set("User-Agent", "MyApp/1.0")
+
+// Выполняем
+resp, err := client.Do(req)
+```
+
+### Request с контекстом
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+resp, err := client.Do(req)
+if err != nil {
+    // Возможно ctx.Err() == context.DeadlineExceeded
+}
+```
+
+### Переиспользуйте Client!
+
+```go
+// ПЛОХО — создаём клиент на каждый запрос
+for i := 0; i < 100; i++ {
+    client := &http.Client{Timeout: 10 * time.Second}
+    client.Get(url)
+}
+
+// ХОРОШО — один клиент на все запросы
+client := &http.Client{Timeout: 10 * time.Second}
+for i := 0; i < 100; i++ {
+    client.Get(url)
+}
+```
+
+### Настройка Transport
+
+```go
+transport := &http.Transport{
+    MaxIdleConns:        100,              // макс. простаивающих соединений
+    MaxIdleConnsPerHost: 10,               // на один хост
+    IdleConnTimeout:     90 * time.Second, // время жизни простоя
+    DisableCompression:  false,            // использовать gzip
+}
+
+client := &http.Client{
+    Transport: transport,
+    Timeout:   30 * time.Second,
+}
+```
+
+### Обработка редиректов
+
+```go
+client := &http.Client{
+    CheckRedirect: func(req *http.Request, via []*http.Request) error {
+        if len(via) >= 10 {
+            return errors.New("too many redirects")
+        }
+        return nil  // разрешить редирект
+    },
+}
+```
+
+---
+
+## 📋 Синтаксис
+
+### Методы Client
+
+```go
+client.Get(url)              // GET
+client.Post(url, type, body) // POST
+client.PostForm(url, data)   // POST form
+client.Do(req)               // любой запрос
 client.Head(url)             // HEAD
 client.Do(req)               // кастомный запрос
 ```
@@ -512,28 +639,139 @@ if resp.StatusCode != 200 {
 
 ---
 
-## 📝 Практика
+## 🏋️ Практические задания
 
-### Задача 1: REST API wrapper
-Создайте обёртку для REST API с CRUD методами.
+### Задание 1: GORM подключение
 
-### Задача 2: OAuth client
-Клиент с OAuth авторизацией.
+Подключитесь через GORM.
 
-### Задача 3: Retry middleware
-Middleware для повторных попыток.
+**Ожидаемый результат:**
+```
+GORM: db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+```
 
-### Задача 4: Rate limited client
-Клиент с ограничением запросов.
+**Начальный код:**
+```go
+package main
 
-### Задача 5: Circuit breaker
-Паттерн circuit breaker для HTTP.
+import "fmt"
 
-### Задача 6: Logging transport
-Transport с логированием запросов.
+func main() {
+    fmt.Println("GORM: db, err := gorm.Open(sqlite.Open(\"test.db\"), &gorm.Config{})")
+}
+```
 
-### Задача 7: Caching client
-Клиент с кэшированием ответов.
+**Ожидаемый вывод:**
+```
+GORM: db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+```
 
-### Задача 8: Metrics collector
-Сбор метрик HTTP запросов.
+**Баллы:** 10
+
+### Задание 2: GORM модели
+
+Определите модель.
+
+**Ожидаемый результат:**
+```
+Модель: type User struct { gorm.Model; Name string }
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Модель: type User struct { gorm.Model; Name string }")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Модель: type User struct { gorm.Model; Name string }
+```
+
+**Баллы:** 10
+
+### Задание 3: AutoMigrate
+
+Создайте таблицы.
+
+**Ожидаемый результат:**
+```
+Migrate: db.AutoMigrate(&User{}, &Post{})
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Migrate: db.AutoMigrate(&User{}, &Post{})")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Migrate: db.AutoMigrate(&User{}, &Post{})
+```
+
+**Баллы:** 15
+
+### Задание 4: GORM CRUD
+
+Выполните CRUD операции.
+
+**Ожидаемый результат:**
+```
+CRUD: Create, First, Find, Save, Delete
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("CRUD: Create, First, Find, Save, Delete")
+}
+```
+
+**Ожидаемый вывод:**
+```
+CRUD: Create, First, Find, Save, Delete
+```
+
+**Баллы:** 15
+
+### Задание 5: GORM связи
+
+Определите связи между моделями.
+
+**Ожидаемый результат:**
+```
+Связи: HasMany, BelongsTo, ManyToMany
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Связи: HasMany, BelongsTo, ManyToMany")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Связи: HasMany, BelongsTo, ManyToMany
+```
+
+**Баллы:** 20

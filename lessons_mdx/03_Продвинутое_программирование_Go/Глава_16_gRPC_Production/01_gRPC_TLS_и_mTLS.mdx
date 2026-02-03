@@ -1,0 +1,168 @@
+# gRPC TLS и mTLS
+
+<Meta>
+reading_time: 12
+</Meta>
+
+<Overview>
+1. В проде gRPC почти всегда должен работать поверх **TLS** (HTTP/2 + шифрование)
+2. **TLS**: клиент проверяет сервер; **mTLS**: сервер проверяет клиента тоже
+3. Сертификаты должны содержать корректный **SAN** (CN уже недостаточно)
+4. В Go TLS настраивается через `crypto/tls` + `credentials` из grpc-go
+5. Не используйте `InsecureSkipVerify` в проде — это ломает модель безопасности
+</Overview>
+
+<Theory>
+### TLS vs mTLS
+
+- **TLS**: защищает канал, подтверждает подлинность сервера
+- **mTLS**: дополнительно подтверждает подлинность клиента (полезно для межсервисного общения)
+
+mTLS часто используют в микросервисах, особенно когда нет централизованного сервис-меша.
+
+### Что важно в сертификатах
+
+- **SAN** (Subject Alternative Name) должен содержать DNS/host, на который вы подключаетесь
+- нужны корректные цепочки доверия (CA → leaf)
+- продумайте ротацию и срок жизни
+
+Для capstone проекта достаточно self-signed CA для dev окружения.
+</Theory>
+
+<Syntax>
+### Генерация dev-сертов (openssl, упрощённо)
+
+```bash
+# 1) CA
+openssl genrsa -out ca.key 4096
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -subj "/CN=capstone-ca"
+
+# 2) server key/csr
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -subj "/CN=grpc-server"
+
+# 3) подпись server сертификата (добавьте SAN через config в реальном проекте)
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 365 -sha256
+```
+
+### gRPC server: TLS
+
+```go
+cert, _ := tls.LoadX509KeyPair("server.crt", "server.key")
+tlsCfg := &tls.Config{
+	Certificates: []tls.Certificate{cert},
+}
+creds := credentials.NewTLS(tlsCfg)
+
+grpcServer := grpc.NewServer(grpc.Creds(creds))
+```
+
+### gRPC server: mTLS
+
+```go
+caPEM, _ := os.ReadFile("ca.crt")
+caPool := x509.NewCertPool()
+caPool.AppendCertsFromPEM(caPEM)
+
+tlsCfg := &tls.Config{
+	Certificates: []tls.Certificate{cert},
+	ClientCAs:    caPool,
+	ClientAuth:   tls.RequireAndVerifyClientCert,
+}
+```
+
+### gRPC client: TLS/mTLS
+
+```go
+rootPEM, _ := os.ReadFile("ca.crt")
+roots := x509.NewCertPool()
+roots.AppendCertsFromPEM(rootPEM)
+
+tlsCfg := &tls.Config{
+	RootCAs: roots,
+	// ServerName должен соответствовать SAN в сертификате сервера
+	ServerName: "grpc-server",
+}
+
+conn, _ := grpc.Dial(addr, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+```
+</Syntax>
+
+<Examples>
+### Пример: dev‑структура для сертификатов
+
+```
+certs/
+  ca.crt
+  ca.key
+  server.crt
+  server.key
+  client.crt
+  client.key
+```
+
+### Пример: insecure режим только для локального dev
+
+```go
+conn, _ := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+```
+
+Важно: insecure — только локально. В CI и staging лучше сразу держать TLS.
+</Examples>
+
+<Pitfalls>
+1. **Нет SAN**: клиент не сможет верифицировать сертификат по имени
+2. **ServerName не совпадает**: TLS handshake упадёт
+3. **InsecureSkipVerify**: отключает проверку сервера → MITM становится возможен
+4. **Ключи в репозитории**: приватные ключи нельзя коммитить
+5. **mTLS без авторизации**: сертификат подтверждает “кто ты”, но не “что тебе можно”
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/crypto/tls`
+- `https://pkg.go.dev/google.golang.org/grpc/credentials`
+- `https://grpc.io/docs/guides/auth/`
+</Links>
+
+<Task id="1" points="15">
+<Title>Задание 1: Включите TLS в capstone gRPC</Title>
+<Prompt>
+Добавьте TLS на gRPC сервер и клиент. Проверьте, что вызовы работают и не используется insecure в staging/CI.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("grpc: TLS enabled")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+grpc: TLS enabled
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Добавьте mTLS</Title>
+<Prompt>
+Настройте mTLS: сервер требует клиентский сертификат и проверяет его по CA. На клиенте используйте `client.crt/client.key`.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("grpc: mTLS enabled")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+grpc: mTLS enabled
+</ExpectedOutput>
+</Task>
+

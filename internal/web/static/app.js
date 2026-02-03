@@ -153,6 +153,14 @@ function initCodeEditors() {
                     }
                     outputContent.textContent = message;
                     
+                    // Обновляем бейдж очков на "Выполнено"
+                    const pointsBadge = card.querySelector('.task-points');
+                    if (pointsBadge && !pointsBadge.classList.contains('completed')) {
+                        pointsBadge.textContent = '✅ Выполнено';
+                        pointsBadge.classList.add('completed');
+                    }
+                    card.setAttribute('data-completed', 'true');
+                    
                     // Обновляем статистику в шапке
                     updateHeaderStats();
                 } else {
@@ -272,6 +280,15 @@ function initTaskActionsFallback() {
                         message += '\n\n📤 Вывод программы:\n' + result.Output;
                     }
                     outputContent.textContent = message;
+                    
+                    // Обновляем бейдж очков на "Выполнено"
+                    const pointsBadge = card.querySelector('.task-points');
+                    if (pointsBadge && !pointsBadge.classList.contains('completed')) {
+                        pointsBadge.textContent = '✅ Выполнено';
+                        pointsBadge.classList.add('completed');
+                    }
+                    card.setAttribute('data-completed', 'true');
+                    
                     updateHeaderStats();
                 } else {
                     outputDiv.className = 'task-output error';

@@ -19,7 +19,8 @@ func main() {
 	limit := flag.Int("limit", 0, "Ограничение количества уроков (0 = без ограничения)")
 	baseURL := flag.String("url", "https://metanit.com/go/tutorial", "Базовый URL для импорта")
 	demo := flag.Bool("demo", false, "Использовать демонстрационные данные вместо загрузки")
-	dir := flag.String("dir", "", "Директория с Markdown файлами уроков (например: ./lessons_ai)")
+	dir := flag.String("dir", "", "Директория с Markdown/MDX файлами уроков")
+	useMDX := flag.Bool("mdx", false, "Использовать MDX парсер (рекомендуется для lessons_mdx)")
 	flag.Parse()
 
 	log.Printf("Go Learning — Импорт контента")
@@ -54,11 +55,19 @@ func main() {
 	// Выбираем режим импорта
 	switch {
 	case *dir != "":
-		// Импорт из директории с Markdown файлами
-		log.Printf("Режим: импорт из директории %s", *dir)
-		importer := ingest.NewMarkdownImporter(repo, *dir)
-		if err := importer.Import(ctx); err != nil {
-			log.Fatalf("Ошибка импорта: %v", err)
+		// Импорт из директории с файлами уроков
+		if *useMDX {
+			log.Printf("Режим: MDX импорт из директории %s", *dir)
+			importer := ingest.NewMDXImporter(repo, *dir)
+			if err := importer.Import(ctx); err != nil {
+				log.Fatalf("Ошибка MDX импорта: %v", err)
+			}
+		} else {
+			log.Printf("Режим: Markdown импорт из директории %s", *dir)
+			importer := ingest.NewMarkdownImporter(repo, *dir)
+			if err := importer.Import(ctx); err != nil {
+				log.Fatalf("Ошибка импорта: %v", err)
+			}
 		}
 
 	case *demo:

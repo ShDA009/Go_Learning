@@ -1,0 +1,556 @@
+# Переменные
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+- **Переменная** — именованная область памяти для хранения данных
+- Переменные объявляются через `var` или краткую форму `:=`
+- Go — статически типизированный язык: тип определяется при создании
+- Неиспользуемые локальные переменные — **ошибка компиляции**
+- Go регистрозависимый: `name` и `Name` — разные переменные
+
+### Способы объявления переменных
+
+| Способ | Пример | Где работает |
+|--------|--------|--------------|
+| `var` с типом | `var x int` | везде |
+| `var` с типом и значением | `var x int = 10` | везде |
+| `var` с выводом типа | `var x = 10` | везде |
+| Краткая форма `:=` | `x := 10` | только внутри функций |
+| Множественное объявление | `var a, b int` | везде |
+| Блок `var ()` | `var (a int; b string)` | везде |
+</Overview>
+
+<Theory>
+### Что такое переменная?
+
+**Переменная** — это имя для участка памяти, где хранится значение. Представьте коробку с наклейкой:
+- Коробка — память
+- Наклейка — имя переменной
+- Содержимое — значение
+
+```go
+var age int = 25
+// "age" — наклейка, int — тип коробки, 25 — содержимое
+```
+
+### Статическая типизация
+
+Go — **статически типизированный** язык. Это означает:
+1. Тип переменной определяется при создании
+2. Тип нельзя изменить потом
+3. Компилятор проверяет типы до запуска программы
+
+```go
+var x int = 10
+x = "hello"  // ОШИБКА! x имеет тип int, а не string
+```
+
+Это отличается от Python/JavaScript, где переменная может менять тип.
+
+### var vs :=
+
+**var** — полная форма объявления:
+```go
+var name string = "John"
+```
+
+**:=** — короткая форма (только внутри функций):
+```go
+name := "John"  // тип выводится автоматически
+```
+
+Почему `:=` не работает вне функций? Потому что на уровне пакета Go требует явности — вы должны показать, что создаёте переменную, а не присваиваете значение.
+
+### Вывод типа (Type Inference)
+
+Go умеет определять тип по значению:
+
+```go
+var x = 42        // x имеет тип int
+var y = 3.14      // y имеет тип float64
+var z = "hello"   // z имеет тип string
+var w = true      // w имеет тип bool
+```
+
+Компилятор смотрит на правую часть и определяет тип автоматически.
+
+### Нулевые значения (Zero Values)
+
+Если переменная объявлена, но не инициализирована, она получает **нулевое значение**:
+
+| Тип | Нулевое значение |
+|-----|------------------|
+| int, float | 0 |
+| string | "" (пустая строка) |
+| bool | false |
+| pointer | nil |
+
+```go
+var count int     // count = 0
+var name string   // name = ""
+var active bool   // active = false
+```
+
+Это гарантирует, что переменная всегда имеет определённое значение.
+
+### Неиспользуемые переменные — ошибка
+
+Go не позволяет создавать переменные, которые не используются:
+
+```go
+func main() {
+    x := 10  // ОШИБКА: x declared but not used
+}
+```
+
+Это заставляет писать чистый код. Если переменная не нужна, используйте `_`:
+
+```go
+_, err := someFunction()  // игнорируем первое значение
+```
+
+### Правила именования
+
+- Начинается с буквы или `_`
+- Может содержать буквы, цифры, `_`
+- Регистрозависимо: `name` ≠ `Name`
+- Заглавная буква = экспортируется: `Name` доступно из других пакетов
+</Theory>
+
+<Syntax>
+### Объявление с типом
+```go
+var имя тип
+var имя тип = значение
+```
+
+### Объявление с выводом типа
+```go
+var имя = значение
+```
+
+### Краткая форма (только внутри функций)
+```go
+имя := значение
+```
+
+### Множественное объявление
+```go
+var a, b, c int              // все одного типа
+var a, b = 10, "hello"       // разные типы
+a, b := 10, "hello"          // краткая форма
+```
+
+### Блок объявлений
+```go
+var (
+    имя1 тип1 = значение1
+    имя2 тип2 = значение2
+)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Базовое объявление
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var name string       // объявление без значения
+    name = "Go"          // присвоение значения
+    fmt.Println(name)    // Go
+}
+```
+
+### Пример 2: Объявление с инициализацией
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var age int = 25
+    var name string = "Alice"
+    var isStudent bool = true
+    
+    fmt.Println(name, age, isStudent)  // Alice 25 true
+}
+```
+
+### Пример 3: Вывод типа
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var name = "Bob"      // string
+    var age = 30          // int
+    var height = 1.75     // float64
+    var active = true     // bool
+    
+    fmt.Printf("name: %T, age: %T, height: %T, active: %T\n",
+               name, age, height, active)
+    // name: string, age: int, height: float64, active: bool
+}
+```
+
+### Пример 4: Краткая форма :=
+```go
+package main
+
+import "fmt"
+
+func main() {
+    name := "Charlie"     // var name = "Charlie"
+    age := 28             // var age = 28
+    score := 95.5         // var score = 95.5
+    
+    fmt.Println(name, age, score)  // Charlie 28 95.5
+}
+```
+
+### Пример 5: Множественное объявление
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Все переменные одного типа
+    var x, y, z int = 1, 2, 3
+    
+    // Разные типы с выводом
+    var name, age = "Diana", 22
+    
+    // Краткая форма
+    a, b, c := 10, 20, 30
+    
+    fmt.Println(x, y, z)       // 1 2 3
+    fmt.Println(name, age)     // Diana 22
+    fmt.Println(a, b, c)       // 10 20 30
+}
+```
+
+### Пример 6: Блок var
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var (
+        firstName = "John"
+        lastName  = "Doe"
+        age       = 35
+        salary    = 50000.50
+    )
+    
+    fmt.Printf("%s %s, возраст: %d, зарплата: %.2f\n",
+               firstName, lastName, age, salary)
+    // John Doe, возраст: 35, зарплата: 50000.50
+}
+```
+
+### Пример 7: Значения по умолчанию (zero values)
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var i int        // 0
+    var f float64    // 0.0
+    var b bool       // false
+    var s string     // "" (пустая строка)
+    
+    fmt.Printf("int: %d, float: %f, bool: %t, string: %q\n",
+               i, f, b, s)
+    // int: 0, float: 0.000000, bool: false, string: ""
+}
+```
+
+### Пример 8: Изменение значения переменной
+```go
+package main
+
+import "fmt"
+
+func main() {
+    count := 0
+    fmt.Println("Начальное:", count)  // 0
+    
+    count = 10
+    fmt.Println("После изменения:", count)  // 10
+    
+    count = count + 5
+    fmt.Println("После сложения:", count)   // 15
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неиспользуемая переменная
+```go
+// ❌ Неправильно — Go требует использовать все локальные переменные
+func main() {
+    x := 10  // declared and not used
+}
+
+// ✅ Правильно
+func main() {
+    x := 10
+    fmt.Println(x)
+}
+
+// ✅ Или используйте _ для игнорирования
+func main() {
+    x := 10
+    _ = x  // явно игнорируем
+}
+```
+
+### 2. := для уже объявленной переменной
+```go
+// ❌ Неправильно
+func main() {
+    x := 10
+    x := 20  // no new variables on left side of :=
+}
+
+// ✅ Правильно — используйте = для переприсвоения
+func main() {
+    x := 10
+    x = 20  // изменяем существующую переменную
+}
+
+// ✅ := работает если есть хотя бы одна новая переменная
+func main() {
+    x := 10
+    x, y := 20, 30  // y — новая, поэтому := разрешён
+}
+```
+
+### 3. := вне функции
+```go
+// ❌ Неправильно — := работает только внутри функций
+package main
+
+name := "Go"  // syntax error
+
+func main() {}
+
+// ✅ Правильно — используйте var на уровне пакета
+package main
+
+var name = "Go"
+
+func main() {}
+```
+
+### 4. Несоответствие типов
+```go
+// ❌ Неправильно
+func main() {
+    var age int = "25"  // cannot use "25" (string) as int
+}
+
+// ✅ Правильно
+func main() {
+    var age int = 25
+    // или
+    var name string = "25"
+}
+```
+
+### 5. Путаница с регистром
+```go
+// ❌ Неправильно — name и Name разные переменные
+func main() {
+    name := "Alice"
+    fmt.Println(Name)  // undefined: Name
+}
+
+// ✅ Правильно
+func main() {
+    name := "Alice"
+    fmt.Println(name)  // Alice
+}
+```
+
+### 6. Объявление без типа и значения
+```go
+// ❌ Неправильно
+func main() {
+    var x  // missing type or initialization
+}
+
+// ✅ Правильно — укажите тип или значение
+func main() {
+    var x int      // с типом (значение = 0)
+    var y = 10     // с значением (тип выводится)
+}
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Объявление через var</Title>
+<Prompt>
+Объявите переменную `language` типа `string` со значением "Go" используя ключевое слово `var`. Выведите её значение.
+</Prompt>
+<Hints>
+- Синтаксис: `var имя тип = значение`
+- Тип можно указать и без присвоения: `var name string`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Объявите переменную через var
+    
+    fmt.Println("Язык программирования:", language)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Язык программирования: Go
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Краткое объявление :=</Title>
+<Prompt>
+Используйте оператор краткого объявления `:=` для создания двух переменных: `x` со значением 10 и `y` со значением 20. Выведите их сумму.
+</Prompt>
+<Hints>
+- `:=` можно использовать только внутри функций
+- Тип определяется по значению справа от `:=`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Объявите x и y через :=
+    
+    fmt.Println("x =", x)
+    fmt.Println("y =", y)
+    fmt.Println("Сумма:", x+y)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+x = 10
+y = 20
+Сумма: 30
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Множественное объявление</Title>
+<Prompt>
+Объявите три переменные одной строкой: `a`, `b`, `c` со значениями 1, 2, 3 соответственно. Выведите их произведение.
+</Prompt>
+<Hints>
+- Синтаксис: `a, b, c := 1, 2, 3`
+- Количество переменных слева должно совпадать с количеством значений справа
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Объявите a, b, c одной строкой
+    
+    fmt.Printf("a=%d, b=%d, c=%d\n", a, b, c)
+    fmt.Println("Произведение:", a*b*c)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+a=1, b=2, c=3
+Произведение: 6
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Блок var</Title>
+<Prompt>
+Используйте блок `var (...)` для объявления нескольких переменных разных типов: имя (string), возраст (int), рост (float64).
+</Prompt>
+<Hints>
+- Блок: `var (name string = "Alice" ...)`
+- Для форматирования float используйте `%.2f`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Создайте блок var (
+    //     name string = ...
+    //     age int = ...
+    //     height float64 = ...
+    // )
+    
+    fmt.Println("Профиль пользователя:")
+    // Выведите данные
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Профиль пользователя:
+Имя: Alice
+Возраст: 25 лет
+Рост: 1.70 м
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Обмен значениями переменных</Title>
+<Prompt>
+Создайте две переменные `a` и `b`, затем поменяйте их значения местами без использования третьей переменной. Это возможно благодаря множественному присваиванию в Go.
+</Prompt>
+<Hints>
+- В Go можно: `a, b = b, a`
+- Это называется "параллельное присваивание"
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    a := 10
+    b := 20
+    
+    fmt.Printf("До обмена: a=%d, b=%d\n", a, b)
+    
+    // Поменяйте значения местами одной строкой
+    
+    fmt.Printf("После обмена: a=%d, b=%d\n", a, b)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До обмена: a=10, b=20
+После обмена: a=20, b=10
+</ExpectedOutput>
+</Task>

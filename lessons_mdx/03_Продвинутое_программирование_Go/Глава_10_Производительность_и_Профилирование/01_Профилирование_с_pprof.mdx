@@ -1,0 +1,254 @@
+# Профилирование с pprof
+
+<Meta>
+reading_time: 12
+</Meta>
+
+<Overview>
+1. **pprof** — стандартный инструмент Go для профилирования CPU/памяти/блокировок
+2. **CPU profile** показывает “горячие” функции по времени CPU (семплирование)
+3. **Heap profile** помогает найти аллокации и причины роста памяти/GC
+4. **Goroutine/Block/Mutex profiles** нужны, когда тормозит конкуретность, а не CPU
+5. **Методология**: сначала измеряем под нагрузкой → фиксируем базовую линию → меняем одно → сравниваем
+</Overview>
+
+<Theory>
+### Зачем нужен pprof
+
+Бенчмарки отвечают на вопрос **“стало ли быстрее/медленнее?”**.  
+Профилирование отвечает на вопрос **“почему медленно и где именно?”**.
+
+`pprof` помогает:
+- найти горячие функции (CPU)
+- найти лишние аллокации и большие объекты (heap/allocs)
+- найти блокировки и contention (mutex/block)
+- увидеть утечки горутин (goroutine)
+
+### Какие профили бывают
+
+- **CPU**: где тратится время процессора
+- **Heap**: какие объекты живут в куче и сколько памяти занимают
+- **Alloc** (через heap-профиль по allocs): где происходят выделения памяти
+- **Goroutine**: стек-трейсы всех горутин
+- **Block/Mutex**: где горутины ждут (каналы/локи)
+
+### Как думать про результаты
+
+Профиль — это статистика. Чтобы выводы были корректными:
+- прогревайте сервис (warm-up)
+- профилируйте **под реалистичной нагрузкой**
+- сравнивайте **одинаковые** бинарники/флаги/окружение
+- не делайте выводов по 3–5 секундам “случайной” активности
+</Theory>
+
+<Syntax>
+### Вариант 1: HTTP endpoint `net/http/pprof` (самый удобный)
+
+Добавьте import и поднимите отдельный порт для pprof:
+
+```go
+import (
+	"log"
+	"net/http"
+	_ "net/http/pprof"
+)
+
+func main() {
+	go func() {
+		log.Println("pprof on :6060")
+		_ = http.ListenAndServe(":6060", nil)
+	}()
+
+	// ... основной сервер ...
+}
+```
+
+Снятие профилей:
+
+```bash
+# CPU (30s)
+curl -s "http://localhost:6060/debug/pprof/profile?seconds=30" -o cpu.pprof
+
+# Heap
+curl -s "http://localhost:6060/debug/pprof/heap" -o heap.pprof
+
+# Goroutines
+curl -s "http://localhost:6060/debug/pprof/goroutine?debug=1" -o goroutines.txt
+```
+
+Просмотр:
+
+```bash
+go tool pprof -http=":0" cpu.pprof
+go tool pprof -top cpu.pprof
+go tool pprof -list "MyFunc" cpu.pprof
+```
+
+### Вариант 2: Профили в бенчмарках
+
+```bash
+go test -run='^$' -bench=. -benchmem -cpuprofile cpu.pprof -memprofile mem.pprof ./...
+go tool pprof -http=":0" cpu.pprof
+```
+
+### Вариант 3: `runtime/pprof` (когда нельзя/не хочется HTTP)
+
+```go
+f, _ := os.Create("cpu.pprof")
+pprof.StartCPUProfile(f)
+defer pprof.StopCPUProfile()
+
+// ... нагрузка ...
+```
+</Syntax>
+
+<Examples>
+### Пример: pprof на отдельном “debug” сервере (рекомендуется)
+
+В продакшене **не вешайте pprof на публичный порт**. Практика — отдельный debug listener, доступный только изнутри сети/VPN.
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	_ "net/http/pprof"
+)
+
+func main() {
+	// Debug server (pprof)
+	debugSrv := &http.Server{
+		Addr:              ":6060",
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		log.Println("debug server (pprof) on http://localhost:6060/debug/pprof/")
+		if err := debugSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Println("debug server error:", err)
+		}
+	}()
+
+	// Main server
+	mainSrv := &http.Server{
+		Addr:              ":8080",
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		log.Println("main server on http://localhost:8080")
+		if err := mainSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Println("main server error:", err)
+		}
+	}()
+
+	// Graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_ = mainSrv.Shutdown(shutdownCtx)
+	_ = debugSrv.Shutdown(shutdownCtx)
+}
+```
+
+### Пример: интерпретация CPU-профиля (первый проход)
+
+1. Сняли профиль `cpu.pprof` на нагрузке
+2. Открыли веб-интерфейс: `go tool pprof -http=":0" cpu.pprof`
+3. Начали с:
+   - **Top**: что “съедает” больше всего времени
+   - **Flamegraph**: путь до горячих точек
+   - **List**: конкретные строки кода
+
+### Что делать, если “всё в runtime”?
+
+Это нормально: `runtime.*` часто проявляется как следствие ваших аллокаций, map-операций, строковых конкатенаций и т.д. Ищите **верхние пользовательские фреймы** (ваши пакеты), откуда приходят вызовы в runtime.
+</Examples>
+
+<Pitfalls>
+1. **pprof в интернет**: `/debug/pprof` нельзя оставлять публичным
+2. **Профили без нагрузки**: измеряете “ничего” и оптимизируете воздух
+3. **Слишком короткий CPU профиль**: 5–10 сек часто дают шум
+4. **Сравнение разных сборок**: разные флаги, разные версии Go, разные зависимости → разные результаты
+5. **Оптимизация без цели**: сначала определите метрики успеха (p95, RPS, CPU%, allocs/op)
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/net/http/pprof`
+- `https://pkg.go.dev/runtime/pprof`
+- `https://go.dev/blog/pprof`
+- `https://github.com/google/pprof/blob/main/doc/README.md`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Подключите pprof (debug порт)</Title>
+<Prompt>
+Опишите (и затем реализуйте в своём проекте), как вы поднимете отдельный debug-сервер с `/debug/pprof/` на отдельном порту и почему это безопаснее, чем вешать pprof на основной HTTP-порт.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("pprof: отдельный debug порт и ограничение доступа")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+pprof: отдельный debug порт и ограничение доступа
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Снимите CPU профиль под нагрузкой</Title>
+<Prompt>
+Сформулируйте план: как вы запустите сервис, дадите нагрузку (hey/wrk/k6), снимете CPU-профиль на 30 секунд и найдёте топ-3 “горячих” функции.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("plan: load -> curl /debug/pprof/profile -> go tool pprof")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+plan: load -> curl /debug/pprof/profile -> go tool pprof
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Найдите лишние аллокации</Title>
+<Prompt>
+Выберите один “горячий” endpoint вашего проекта и уменьшите аллокации (по heap/allocs профилю). В отчёте укажите: было/стало, что изменили и почему это работает.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("allocs: было -> стало, что поменял и почему")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+allocs: было -> стало, что поменял и почему
+</ExpectedOutput>
+</Task>
+

@@ -1,0 +1,612 @@
+# Таймауты соединений
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **SetDeadline** — таймаут на все операции
+2. **SetReadDeadline** — таймаут только на чтение
+3. **SetWriteDeadline** — таймаут только на запись
+4. **time.Time** — абсолютное время, а не длительность
+5. **Предотвращение блокировки** — защита от "зависших" соединений
+</Overview>
+
+<Theory>
+### Зачем нужны таймауты?
+
+Без таймаутов программа может "зависнуть" навсегда:
+- Клиент ушёл, не закрыв соединение
+- Сеть упала посреди передачи
+- Сервер не отвечает
+
+### Три типа таймаутов
+
+| Метод | Влияет на |
+|-------|-----------|
+| `SetDeadline` | Все операции (Read + Write) |
+| `SetReadDeadline` | Только Read |
+| `SetWriteDeadline` | Только Write |
+
+### Deadline — это абсолютное время!
+
+```go
+// НЕПРАВИЛЬНОЕ понимание
+conn.SetDeadline(5 * time.Second)  // НЕ компилируется!
+
+// ПРАВИЛЬНО — абсолютная точка во времени
+conn.SetDeadline(time.Now().Add(5 * time.Second))
+```
+
+### Паттерн: таймаут на операцию
+
+```go
+conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+n, err := conn.Read(buf)
+if err != nil {
+    if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+        fmt.Println("Таймаут чтения!")
+    }
+}
+```
+
+### Паттерн: таймаут на соединение с контекстом
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+var d net.Dialer
+conn, err := d.DialContext(ctx, "tcp", "server:8080")
+if err != nil {
+    // Таймаут или другая ошибка
+}
+```
+
+### Обновление deadline
+
+Для долгоживущих соединений обновляйте deadline после каждой операции:
+
+```go
+for {
+    // Обновляем таймаут перед каждым чтением
+    conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+    
+    n, err := conn.Read(buf)
+    if err != nil {
+        break
+    }
+    process(buf[:n])
+}
+```
+
+### Сброс таймаута
+
+```go
+// Убрать таймаут (ждать бесконечно)
+conn.SetDeadline(time.Time{})
+```
+
+### Рекомендации
+
+**Для клиентов:**
+- Таймаут на подключение: 5-10 сек
+- Таймаут на чтение: зависит от операции
+- Таймаут на запись: 5-30 сек
+
+**Для серверов:**
+- Idle timeout: закрыть неактивное соединение
+- Read timeout: защита от медленных клиентов
+- Write timeout: защита от зависших клиентов
+
+### Ошибки таймаута
+
+```go
+if err != nil {
+    if netErr, ok := err.(net.Error); ok {
+        if netErr.Timeout() {
+            // Превышен таймаут
+        }
+        if netErr.Temporary() {
+            // Временная ошибка, можно повторить
+        }
+    }
+}
+```
+</Theory>
+
+<Syntax>
+### Методы net.Conn для таймаутов
+
+```go
+// Таймаут на все операции
+SetDeadline(t time.Time) error
+
+// Таймаут только на чтение
+SetReadDeadline(t time.Time) error
+
+// Таймаут только на запись
+SetWriteDeadline(t time.Time) error
+```
+
+### Установка таймаута
+
+```go
+// Таймаут через 5 секунд от текущего момента
+conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+// Сброс таймаута (бесконечное ожидание)
+conn.SetDeadline(time.Time{})
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый таймаут на чтение
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "example.com:80")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Устанавливаем таймаут 5 секунд на чтение
+    conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+    
+    buffer := make([]byte, 1024)
+    n, err := conn.Read(buffer)
+    
+    if err != nil {
+        // Проверяем, что это таймаут
+        if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+            fmt.Println("Read timeout!")
+        } else {
+            fmt.Println("Read error:", err)
+        }
+        return
+    }
+    
+    fmt.Printf("Received %d bytes\n", n)
+}
+```
+
+### Клиент с динамическим таймаутом
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "127.0.0.1:4545")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Отправляем запрос
+    conn.Write([]byte("hello\n"))
+    
+    // Первоначальный таймаут — больше (5 секунд)
+    conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+    
+    var response []byte
+    buffer := make([]byte, 1024)
+    
+    for {
+        n, err := conn.Read(buffer)
+        if err != nil {
+            // Таймаут или конец данных
+            break
+        }
+        
+        response = append(response, buffer[:n]...)
+        
+        // После первого чтения уменьшаем таймаут
+        // Если за 700мс нет новых данных — значит всё получили
+        conn.SetReadDeadline(time.Now().Add(700 * time.Millisecond))
+    }
+    
+    fmt.Println("Response:", string(response))
+}
+```
+
+### Таймаут на запись
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "127.0.0.1:4545")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Таймаут 3 секунды на запись
+    conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+    
+    // Большие данные
+    data := make([]byte, 10*1024*1024)  // 10 MB
+    
+    n, err := conn.Write(data)
+    if err != nil {
+        if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+            fmt.Printf("Write timeout! Sent %d bytes\n", n)
+        } else {
+            fmt.Println("Write error:", err)
+        }
+        return
+    }
+    
+    fmt.Printf("Sent %d bytes\n", n)
+}
+```
+
+### Сервер с таймаутом неактивности
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "net"
+    "time"
+)
+
+const idleTimeout = 30 * time.Second
+
+func handleClient(conn net.Conn) {
+    defer conn.Close()
+    
+    reader := bufio.NewReader(conn)
+    
+    for {
+        // Устанавливаем таймаут на чтение
+        conn.SetReadDeadline(time.Now().Add(idleTimeout))
+        
+        message, err := reader.ReadString('\n')
+        if err != nil {
+            if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+                conn.Write([]byte("Connection timed out due to inactivity\n"))
+                fmt.Println("Client timed out")
+            }
+            return
+        }
+        
+        fmt.Printf("Received: %s", message)
+        conn.Write([]byte("OK\n"))
+    }
+}
+
+func main() {
+    listener, err := net.Listen("tcp", ":4545")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer listener.Close()
+    
+    fmt.Printf("Server started (idle timeout: %v)\n", idleTimeout)
+    
+    for {
+        conn, err := listener.Accept()
+        if err != nil {
+            continue
+        }
+        go handleClient(conn)
+    }
+}
+```
+
+### Dialer с таймаутом подключения
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    // Способ 1: DialTimeout
+    conn, err := net.DialTimeout("tcp", "example.com:80", 3*time.Second)
+    if err != nil {
+        fmt.Println("Connection timeout:", err)
+        return
+    }
+    conn.Close()
+    
+    // Способ 2: Dialer
+    dialer := net.Dialer{
+        Timeout:   5 * time.Second,   // таймаут подключения
+        KeepAlive: 30 * time.Second,  // интервал keep-alive
+    }
+    
+    conn, err = dialer.Dial("tcp", "example.com:80")
+    if err != nil {
+        fmt.Println("Connection error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    fmt.Println("Connected!")
+}
+```
+
+### Таймаут с контекстом
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    // Контекст с таймаутом
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    
+    dialer := net.Dialer{}
+    conn, err := dialer.DialContext(ctx, "tcp", "example.com:80")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Операции с соединением...
+    fmt.Println("Connected!")
+}
+```
+
+### Обработка разных типов ошибок
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func handleError(err error) {
+    if err == nil {
+        return
+    }
+    
+    // Проверяем тип ошибки
+    netErr, ok := err.(net.Error)
+    if !ok {
+        fmt.Println("Non-network error:", err)
+        return
+    }
+    
+    if netErr.Timeout() {
+        fmt.Println("Timeout error")
+    }
+    
+    // Deprecated в Go 1.18+, но может встретиться
+    // if netErr.Temporary() {
+    //     fmt.Println("Temporary error, retry possible")
+    // }
+    
+    fmt.Println("Network error:", netErr)
+}
+
+func main() {
+    conn, err := net.DialTimeout("tcp", "192.0.2.1:80", 2*time.Second)
+    if err != nil {
+        handleError(err)
+        return
+    }
+    defer conn.Close()
+}
+```
+
+### Keep-alive для длинных соединений
+
+```go
+package main
+
+import (
+    "fmt"
+    "net"
+    "time"
+)
+
+func main() {
+    conn, err := net.Dial("tcp", "127.0.0.1:4545")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer conn.Close()
+    
+    // Приводим к *net.TCPConn для доступа к специфичным методам
+    tcpConn, ok := conn.(*net.TCPConn)
+    if ok {
+        // Включаем TCP keep-alive
+        tcpConn.SetKeepAlive(true)
+        tcpConn.SetKeepAlivePeriod(30 * time.Second)
+    }
+    
+    // Работа с соединением...
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Путают длительность и момент времени
+
+```go
+// ❌ Передают duration вместо time.Time
+conn.SetDeadline(5 * time.Second)  // ОШИБКА!
+
+// ✅ Передают момент времени
+conn.SetDeadline(time.Now().Add(5 * time.Second))
+```
+
+### 2. Забывают обновлять таймаут
+
+```go
+// ❌ Таймаут не обновляется в цикле
+conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+for {
+    conn.Read(buffer)  // после 5 сек все чтения будут с ошибкой
+}
+
+// ✅ Обновляйте таймаут перед каждой операцией
+for {
+    conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+    conn.Read(buffer)
+}
+```
+
+### 3. Слишком короткий таймаут
+
+```go
+// ❌ 100мс может не хватить для сети
+conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
+// ✅ Разумный таймаут
+conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: database/sql</Title>
+<Prompt>
+Подключитесь к базе данных.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("DB: db, err := sql.Open(\"driver\", \"connection_string\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+DB: db, err := sql.Open("driver", "connection_string")
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: db.Query</Title>
+<Prompt>
+Выполните SELECT запрос.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Query: rows, err := db.Query(\"SELECT * FROM users\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Query: rows, err := db.Query("SELECT * FROM users")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: rows.Scan</Title>
+<Prompt>
+Прочитайте результаты запроса.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Scan: for rows.Next() { rows.Scan(&id, &name) }")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Scan: for rows.Next() { rows.Scan(&id, &name) }
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: db.Exec</Title>
+<Prompt>
+Выполните INSERT/UPDATE/DELETE.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Exec: result, err := db.Exec(\"INSERT INTO users (name) VALUES (?)\", name)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Exec: result, err := db.Exec("INSERT INTO users (name) VALUES (?)", name)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Prepared statements</Title>
+<Prompt>
+Используйте подготовленные запросы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Prepare: stmt, err := db.Prepare(\"SELECT...\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Prepare: stmt, err := db.Prepare("SELECT...")
+</ExpectedOutput>
+</Task>

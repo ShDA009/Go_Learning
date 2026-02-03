@@ -68,12 +68,16 @@ func NewServer(contentRepo *content.Repository, progressRepo *progress.Repositor
 			switch kind {
 			case content.SectionOverview:
 				return "💡"
+			case content.SectionTheory:
+				return "📖"
 			case content.SectionSyntax:
 				return "📋"
 			case content.SectionExamples:
 				return "💻"
 			case content.SectionPitfalls:
 				return "⚠️"
+			case content.SectionLinks:
+				return "🔗"
 			case content.SectionExtra:
 				return "📚"
 			default:
@@ -141,6 +145,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/", s.handleIndex)
 	r.Get("/lessons/{slug}", s.handleLesson)
 	r.Get("/search", s.handleSearch)
+	r.Get("/projects", s.handleProjects)
 
 	// API
 	r.Post("/api/progress/lesson/{id}", s.handleUpdateProgress)
@@ -156,28 +161,51 @@ func (s *Server) Router() http.Handler {
 
 // handleIndex — главная страница со списком уроков.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	modules, err := s.contentRepo.ListModules()
+	// Загружаем все курсы
+	courses, err := s.contentRepo.ListCourses()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 
-	// Загружаем уроки для каждого модуля
+	// Структура для модуля с уроками
 	type ModuleWithLessons struct {
 		Module  content.Module
 		Lessons []content.Lesson
 	}
 
-	var modulesWithLessons []ModuleWithLessons
-	for _, m := range modules {
-		lessons, err := s.contentRepo.ListLessonsByModuleID(m.ID)
+	// Структура для курса с модулями
+	type CourseWithModules struct {
+		Course  content.Course
+		Modules []ModuleWithLessons
+	}
+
+	var coursesWithModules []CourseWithModules
+
+	for _, course := range courses {
+		// Загружаем модули для курса
+		modules, err := s.contentRepo.ListModulesByCourseID(course.ID)
 		if err != nil {
 			s.serverError(w, err)
 			return
 		}
-		modulesWithLessons = append(modulesWithLessons, ModuleWithLessons{
-			Module:  m,
-			Lessons: lessons,
+
+		var modulesWithLessons []ModuleWithLessons
+		for _, m := range modules {
+			lessons, err := s.contentRepo.ListLessonsByModuleID(m.ID)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			modulesWithLessons = append(modulesWithLessons, ModuleWithLessons{
+				Module:  m,
+				Lessons: lessons,
+			})
+		}
+
+		coursesWithModules = append(coursesWithModules, CourseWithModules{
+			Course:  course,
+			Modules: modulesWithLessons,
 		})
 	}
 
@@ -186,7 +214,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	stats, _ := s.progressRepo.GetStats()
 
 	data := map[string]interface{}{
-		"Modules":  modulesWithLessons,
+		"Courses":  coursesWithModules,
 		"Progress": progressMap,
 		"Stats":    stats,
 	}
@@ -236,13 +264,24 @@ func (s *Server) handleLesson(w http.ResponseWriter, r *http.Request) {
 	// Загружаем статистику для шапки
 	stats, _ := s.progressRepo.GetStats()
 
+	// Загружаем список выполненных заданий
+	completedTasks := make(map[int64]bool)
+	if lesson.Tasks != nil {
+		for _, task := range lesson.Tasks {
+			if completed, _ := s.progressRepo.IsTaskSolvedSuccessfully(task.ID); completed {
+				completedTasks[task.ID] = true
+			}
+		}
+	}
+
 	data := map[string]interface{}{
-		"Lesson":     lesson,
-		"Progress":   prog,
-		"Note":       note,
-		"PrevLesson": prevLesson,
-		"NextLesson": nextLesson,
-		"Stats":      stats,
+		"Lesson":         lesson,
+		"Progress":       prog,
+		"Note":           note,
+		"PrevLesson":     prevLesson,
+		"NextLesson":     nextLesson,
+		"Stats":          stats,
+		"CompletedTasks": completedTasks,
 	}
 
 	s.render(w, "lesson.html", data)

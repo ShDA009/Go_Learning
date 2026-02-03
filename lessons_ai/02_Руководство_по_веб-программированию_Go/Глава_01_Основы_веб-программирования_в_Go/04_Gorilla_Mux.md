@@ -41,6 +41,99 @@ id := vars["id"]
 
 ---
 
+## 📖 Теория
+
+### Зачем gorilla/mux?
+
+Стандартный роутер Go слишком простой. `gorilla/mux` добавляет:
+- Параметры в URL
+- Регулярные выражения
+- Фильтрация по HTTP-методу
+- Middleware
+- Именованные маршруты
+
+### Установка
+
+```bash
+go get -u github.com/gorilla/mux
+```
+
+### Параметры URL
+
+```go
+r := mux.NewRouter()
+
+// /users/123 → id = "123"
+r.HandleFunc("/users/{id}", userHandler)
+
+func userHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    fmt.Fprintf(w, "User ID: %s", id)
+}
+```
+
+### Регулярные выражения
+
+```go
+// Только цифры
+r.HandleFunc("/users/{id:[0-9]+}", userHandler)
+
+// Только буквы
+r.HandleFunc("/category/{name:[a-z]+}", categoryHandler)
+
+// UUID
+r.HandleFunc("/items/{uuid:[a-f0-9-]+}", itemHandler)
+```
+
+### Фильтрация по HTTP-методу
+
+```go
+r.HandleFunc("/users", getUsers).Methods("GET")
+r.HandleFunc("/users", createUser).Methods("POST")
+r.HandleFunc("/users/{id}", updateUser).Methods("PUT")
+r.HandleFunc("/users/{id}", deleteUser).Methods("DELETE")
+```
+
+### Subrouter — группировка маршрутов
+
+```go
+api := r.PathPrefix("/api/v1").Subrouter()
+api.HandleFunc("/users", usersHandler)     // /api/v1/users
+api.HandleFunc("/products", productsHandler) // /api/v1/products
+```
+
+### Middleware
+
+```go
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Println(r.Method, r.URL.Path)
+        next.ServeHTTP(w, r)
+    })
+}
+
+r.Use(loggingMiddleware)
+```
+
+### Именованные маршруты
+
+```go
+r.HandleFunc("/users/{id}", userHandler).Name("user")
+
+// Генерация URL
+url, _ := r.Get("user").URL("id", "123")
+fmt.Println(url.String())  // /users/123
+```
+
+### Когда использовать?
+
+- **Стандартный роутер** — простые приложения
+- **gorilla/mux** — REST API, сложная маршрутизация
+- **Chi, Gin, Echo** — альтернативы с большим функционалом
+
+---
+
 ## 💻 Примеры кода
 
 ### Базовое использование
@@ -438,28 +531,139 @@ router.HandleFunc("/users/{id}", specificHandler)
 
 ---
 
-## 📝 Практика
+## 🏋️ Практические задания
 
-### Задача 1: REST API
-Полный CRUD API с gorilla/mux.
+### Задание 1: Структура проекта
 
-### Задача 2: Nested routes
-Вложенные маршруты с subrouters.
+Организация Go проекта.
 
-### Задача 3: Auth middleware
-Middleware для авторизации.
+**Ожидаемый результат:**
+```
+Структура: cmd/, internal/, pkg/, api/
+```
 
-### Задача 4: Rate limiting
-Ограничение запросов.
+**Начальный код:**
+```go
+package main
 
-### Задача 5: CORS
-Middleware для CORS.
+import "fmt"
 
-### Задача 6: Validation
-Валидация параметров URL.
+func main() {
+    fmt.Println("Структура: cmd/, internal/, pkg/, api/")
+}
+```
 
-### Задача 7: Error handling
-Централизованная обработка ошибок.
+**Ожидаемый вывод:**
+```
+Структура: cmd/, internal/, pkg/, api/
+```
 
-### Задача 8: Documentation
-Автодокументация API.
+**Баллы:** 10
+
+### Задание 2: Clean Architecture
+
+Слои Clean Architecture.
+
+**Ожидаемый результат:**
+```
+Слои: handlers -> services -> repositories
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Слои: handlers -> services -> repositories")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Слои: handlers -> services -> repositories
+```
+
+**Баллы:** 15
+
+### Задание 3: Dependency Injection
+
+Внедрение зависимостей.
+
+**Ожидаемый результат:**
+```
+DI: NewService(repo Repository) *Service
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("DI: NewService(repo Repository) *Service")
+}
+```
+
+**Ожидаемый вывод:**
+```
+DI: NewService(repo Repository) *Service
+```
+
+**Баллы:** 15
+
+### Задание 4: Конфигурация
+
+Загрузка конфигурации.
+
+**Ожидаемый результат:**
+```
+Конфиг: envconfig, viper, или yaml
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Конфиг: envconfig, viper, или yaml")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Конфиг: envconfig, viper, или yaml
+```
+
+**Баллы:** 10
+
+### Задание 5: Graceful shutdown
+
+Корректное завершение.
+
+**Ожидаемый результат:**
+```
+Shutdown: signal.Notify, context.WithCancel
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Shutdown: signal.Notify, context.WithCancel")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Shutdown: signal.Notify, context.WithCancel
+```
+
+**Баллы:** 20

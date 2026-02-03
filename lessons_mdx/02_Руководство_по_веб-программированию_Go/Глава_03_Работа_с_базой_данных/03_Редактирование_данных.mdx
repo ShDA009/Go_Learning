@@ -1,0 +1,630 @@
+# Редактирование данных
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **QueryRow + Scan** — получение текущих данных
+2. **Exec UPDATE** — обновление записи
+3. **Форма с предзаполненными данными** — UX
+4. **ID в URL** — идентификация редактируемой записи
+5. **RowsAffected** — проверка успешности обновления
+</Overview>
+
+<Theory>
+### Паттерн редактирования
+
+1. **GET /edit?id=123** — загрузить данные, показать форму
+2. **POST /edit?id=123** — обновить данные в БД
+3. **Redirect** — вернуться к списку
+
+### Загрузка данных для формы
+
+```go
+func editHandler(w http.ResponseWriter, r *http.Request) {
+    id := r.URL.Query().Get("id")
+    
+    if r.Method == http.MethodGet {
+        // Загружаем текущие данные
+        var product Product
+        err := db.QueryRow(
+            "SELECT id, name, price FROM products WHERE id = ?", id,
+        ).Scan(&product.ID, &product.Name, &product.Price)
+        
+        if err == sql.ErrNoRows {
+            http.NotFound(w, r)
+            return
+        }
+        
+        // Показываем форму с данными
+        tmpl.Execute(w, product)
+        return
+    }
+    
+    // POST — обновление
+    name := r.FormValue("name")
+    price := r.FormValue("price")
+    
+    _, err := db.Exec(
+        "UPDATE products SET name = ?, price = ? WHERE id = ?",
+        name, price, id,
+    )
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    http.Redirect(w, r, "/products", http.StatusSeeOther)
+}
+```
+
+### Форма с предзаполненными данными
+
+```html
+<form method="POST">
+    <input name="name" value="{{.Name}}">
+    <input name="price" value="{{.Price}}">
+    <button type="submit">Сохранить</button>
+</form>
+```
+
+### Проверка успешности обновления
+
+```go
+result, _ := db.Exec("UPDATE products SET name = ? WHERE id = ?", name, id)
+affected, _ := result.RowsAffected()
+
+if affected == 0 {
+    // Запись не найдена или данные не изменились
+    http.NotFound(w, r)
+    return
+}
+```
+
+### Оптимистичная блокировка
+
+Для защиты от конкурентного редактирования:
+
+```go
+// В таблице есть колонка version
+result, _ := db.Exec(
+    "UPDATE products SET name = ?, version = version + 1 WHERE id = ? AND version = ?",
+    name, id, currentVersion,
+)
+
+affected, _ := result.RowsAffected()
+if affected == 0 {
+    // Кто-то уже изменил запись!
+    http.Error(w, "Данные устарели, обновите страницу", http.StatusConflict)
+    return
+}
+```
+
+### RESTful подход
+
+С gorilla/mux:
+```go
+r.HandleFunc("/products/{id}", getProductHandler).Methods("GET")
+r.HandleFunc("/products/{id}", updateProductHandler).Methods("PUT")
+r.HandleFunc("/products/{id}/edit", editFormHandler).Methods("GET")
+```
+</Theory>
+
+<Syntax>
+### Получение записи для редактирования
+
+```go
+var p Product
+err := db.QueryRow("SELECT id, name, price FROM products WHERE id = ?", id).
+    Scan(&p.ID, &p.Name, &p.Price)
+```
+
+### Обновление записи
+
+```go
+result, err := db.Exec(
+    "UPDATE products SET name = ?, price = ? WHERE id = ?",
+    name, price, id,
+)
+
+affected, _ := result.RowsAffected()
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Форма редактирования (HTML)
+
+**templates/edit.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Product</title>
+    <style>
+        form { max-width: 400px; }
+        label { display: block; margin-top: 10px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; }
+        button { margin-top: 15px; padding: 10px 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Edit Product</h1>
+    
+    {{ if .Error }}
+    <p class="error">{{ .Error }}</p>
+    {{ end }}
+    
+    <form action="/edit/{{ .Product.ID }}" method="POST">
+        <label>Name:
+            <input type="text" name="name" value="{{ .Product.Name }}" required>
+        </label>
+        
+        <label>Price:
+            <input type="number" name="price" value="{{ .Product.Price }}" required min="0">
+        </label>
+        
+        <button type="submit">Save Changes</button>
+    </form>
+    
+    <p><a href="/">Back to list</a></p>
+</body>
+</html>
+```
+
+### Обработчик редактирования
+
+```go
+package main
+
+import (
+    "database/sql"
+    "html/template"
+    "net/http"
+    "strconv"
+    
+    "github.com/gorilla/mux"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price int
+}
+
+var database *sql.DB
+
+func main() {
+    var err error
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    router := mux.NewRouter()
+    router.HandleFunc("/", listHandler).Methods("GET")
+    router.HandleFunc("/edit/{id:[0-9]+}", editHandler).Methods("GET", "POST")
+    
+    http.ListenAndServe(":8080", router)
+}
+
+func editHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    if r.Method == http.MethodGet {
+        // Получаем текущие данные
+        var p Product
+        err := database.QueryRow(
+            "SELECT id, name, price FROM products WHERE id = ?", id,
+        ).Scan(&p.ID, &p.Name, &p.Price)
+        
+        if err == sql.ErrNoRows {
+            http.NotFound(w, r)
+            return
+        }
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        
+        tmpl := template.Must(template.ParseFiles("templates/edit.html"))
+        tmpl.Execute(w, map[string]interface{}{"Product": p})
+        return
+    }
+    
+    // POST — сохраняем изменения
+    name := r.FormValue("name")
+    price, err := strconv.Atoi(r.FormValue("price"))
+    if err != nil {
+        http.Error(w, "Invalid price", 400)
+        return
+    }
+    
+    result, err := database.Exec(
+        "UPDATE products SET name = ?, price = ? WHERE id = ?",
+        name, price, id,
+    )
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    // Проверяем, была ли обновлена запись
+    affected, _ := result.RowsAffected()
+    if affected == 0 {
+        http.NotFound(w, r)
+        return
+    }
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+
+### Список с кнопками редактирования
+
+**templates/list.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; max-width: 700px; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+        th { background-color: #4CAF50; color: white; }
+        .btn { padding: 5px 10px; text-decoration: none; color: white; border-radius: 3px; }
+        .btn-edit { background: #2196F3; }
+        .btn-delete { background: #f44336; }
+        .actions { margin-bottom: 20px; }
+        .btn-add { padding: 10px 20px; background: #4CAF50; }
+    </style>
+</head>
+<body>
+    <h1>Products</h1>
+    
+    <div class="actions">
+        <a href="/create" class="btn btn-add">+ Add Product</a>
+    </div>
+    
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Actions</th>
+        </tr>
+        {{ range . }}
+        <tr>
+            <td>{{ .ID }}</td>
+            <td>{{ .Name }}</td>
+            <td>${{ .Price }}</td>
+            <td>
+                <a href="/edit/{{ .ID }}" class="btn btn-edit">Edit</a>
+                <a href="/delete/{{ .ID }}" class="btn btn-delete" 
+                   onclick="return confirm('Are you sure?')">Delete</a>
+            </td>
+        </tr>
+        {{ else }}
+        <tr>
+            <td colspan="4">No products yet</td>
+        </tr>
+        {{ end }}
+    </table>
+</body>
+</html>
+```
+
+### Валидация при редактировании
+
+```go
+type EditForm struct {
+    Product Product
+    Errors  map[string]string
+}
+
+func editHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id, _ := strconv.Atoi(vars["id"])
+    
+    if r.Method == http.MethodGet {
+        var p Product
+        err := database.QueryRow(
+            "SELECT id, name, price FROM products WHERE id = ?", id,
+        ).Scan(&p.ID, &p.Name, &p.Price)
+        
+        if err == sql.ErrNoRows {
+            http.NotFound(w, r)
+            return
+        }
+        
+        form := EditForm{Product: p}
+        renderEdit(w, form)
+        return
+    }
+    
+    // POST — валидация и сохранение
+    price, _ := strconv.Atoi(r.FormValue("price"))
+    
+    form := EditForm{
+        Product: Product{
+            ID:    id,
+            Name:  r.FormValue("name"),
+            Price: price,
+        },
+        Errors: make(map[string]string),
+    }
+    
+    // Валидация
+    if form.Product.Name == "" {
+        form.Errors["name"] = "Name is required"
+    }
+    if form.Product.Price < 0 {
+        form.Errors["price"] = "Price cannot be negative"
+    }
+    
+    if len(form.Errors) > 0 {
+        renderEdit(w, form)
+        return
+    }
+    
+    // Сохранение
+    database.Exec(
+        "UPDATE products SET name = ?, price = ? WHERE id = ?",
+        form.Product.Name, form.Product.Price, form.Product.ID,
+    )
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func renderEdit(w http.ResponseWriter, form EditForm) {
+    tmpl := template.Must(template.ParseFiles("templates/edit.html"))
+    tmpl.Execute(w, form)
+}
+```
+
+### Частичное обновление (PATCH)
+
+```go
+func updatePartial(id int, updates map[string]interface{}) error {
+    if len(updates) == 0 {
+        return nil
+    }
+    
+    // Строим запрос динамически
+    query := "UPDATE products SET "
+    args := []interface{}{}
+    first := true
+    
+    for key, value := range updates {
+        if !first {
+            query += ", "
+        }
+        query += key + " = ?"
+        args = append(args, value)
+        first = false
+    }
+    
+    query += " WHERE id = ?"
+    args = append(args, id)
+    
+    _, err := database.Exec(query, args...)
+    return err
+}
+
+func patchHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id, _ := strconv.Atoi(vars["id"])
+    
+    updates := make(map[string]interface{})
+    
+    if name := r.FormValue("name"); name != "" {
+        updates["name"] = name
+    }
+    if priceStr := r.FormValue("price"); priceStr != "" {
+        if price, err := strconv.Atoi(priceStr); err == nil {
+            updates["price"] = price
+        }
+    }
+    
+    err := updatePartial(id, updates)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    w.WriteHeader(http.StatusOK)
+}
+```
+
+### Оптимистичная блокировка (версионирование)
+
+```go
+type Product struct {
+    ID      int
+    Name    string
+    Price   int
+    Version int  // Для оптимистичной блокировки
+}
+
+func editHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    if r.Method == http.MethodPost {
+        name := r.FormValue("name")
+        price, _ := strconv.Atoi(r.FormValue("price"))
+        version, _ := strconv.Atoi(r.FormValue("version"))
+        
+        // Обновляем только если версия совпадает
+        result, err := database.Exec(
+            `UPDATE products 
+             SET name = ?, price = ?, version = version + 1 
+             WHERE id = ? AND version = ?`,
+            name, price, id, version,
+        )
+        
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        
+        affected, _ := result.RowsAffected()
+        if affected == 0 {
+            // Данные были изменены другим пользователем
+            http.Error(w, "Data was modified by another user. Please refresh and try again.", 409)
+            return
+        }
+        
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+        return
+    }
+    
+    // GET — показать форму с текущей версией
+    var p Product
+    database.QueryRow(
+        "SELECT id, name, price, version FROM products WHERE id = ?", id,
+    ).Scan(&p.ID, &p.Name, &p.Price, &p.Version)
+    
+    tmpl := template.Must(template.ParseFiles("templates/edit.html"))
+    tmpl.Execute(w, p)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Не проверяют существование записи
+
+```go
+// ❌ Молча ничего не обновит
+database.Exec("UPDATE products SET name = ? WHERE id = ?", name, 999999)
+
+// ✅ Проверяем RowsAffected
+result, _ := database.Exec("UPDATE products SET name = ? WHERE id = ?", name, id)
+affected, _ := result.RowsAffected()
+if affected == 0 {
+    http.NotFound(w, r)
+    return
+}
+```
+
+### 2. Race condition
+
+```go
+// ❌ Два пользователя редактируют одновременно
+// Последний перезаписывает данные первого
+
+// ✅ Используйте версионирование или блокировки
+UPDATE ... WHERE id = ? AND version = ?
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: MongoDB driver</Title>
+<Prompt>
+Подключитесь к MongoDB.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("MongoDB: mongo.Connect(ctx, options.Client().ApplyURI(uri))")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+MongoDB: mongo.Connect(ctx, options.Client().ApplyURI(uri))
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: MongoDB Insert</Title>
+<Prompt>
+Вставьте документ.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Insert: collection.InsertOne(ctx, doc)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Insert: collection.InsertOne(ctx, doc)
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: MongoDB Find</Title>
+<Prompt>
+Найдите документы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Find: cursor, _ := collection.Find(ctx, filter)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Find: cursor, _ := collection.Find(ctx, filter)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: MongoDB Update</Title>
+<Prompt>
+Обновите документ.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Update: collection.UpdateOne(ctx, filter, bson.M{\"$set\": update})")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Update: collection.UpdateOne(ctx, filter, bson.M{"$set": update})
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: MongoDB aggregation</Title>
+<Prompt>
+Используйте aggregation pipeline.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Aggregate: collection.Aggregate(ctx, pipeline)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Aggregate: collection.Aggregate(ctx, pipeline)
+</ExpectedOutput>
+</Task>

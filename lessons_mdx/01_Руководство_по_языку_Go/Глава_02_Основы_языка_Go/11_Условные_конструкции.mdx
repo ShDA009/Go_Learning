@@ -1,0 +1,691 @@
+# Условные конструкции
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+- `if` выполняет код, если условие **true**
+- `else` — альтернативная ветка, если условие **false**
+- `else if` — проверка дополнительных условий
+- `switch` — удобная альтернатива множественным `if-else`
+- В Go `switch` **не проваливается** автоматически (нет нужды в `break`)
+
+### Сравнение if и switch
+
+| Ситуация | Используйте |
+|----------|-------------|
+| Проверка логического условия | `if` |
+| Диапазон значений | `if` с `&&` |
+| Много конкретных значений | `switch` |
+| Проверка типа | `switch` с type assertion |
+</Overview>
+
+<Theory>
+### Управление потоком выполнения
+
+По умолчанию код выполняется сверху вниз, строка за строкой. **Условные конструкции** позволяют изменить этот поток — выполнить разный код в зависимости от условий.
+
+```
+       ┌─────────────────┐
+       │    Условие?     │
+       └────────┬────────┘
+          true  │  false
+       ┌────────┴────────┐
+       ▼                 ▼
+  ┌─────────┐       ┌─────────┐
+  │ Код A   │       │ Код B   │
+  └─────────┘       └─────────┘
+```
+
+### Особенности if в Go
+
+**1. Скобки вокруг условия не нужны:**
+```go
+// Go
+if x > 0 {
+    fmt.Println("positive")
+}
+
+// C/Java (скобки обязательны)
+// if (x > 0) { ... }
+```
+
+**2. Фигурные скобки обязательны:**
+```go
+// ОШИБКА в Go!
+if x > 0
+    fmt.Println("positive")
+```
+
+**3. Можно объявить переменную в условии:**
+```go
+if err := doSomething(); err != nil {
+    // err существует только здесь
+    return err
+}
+// err уже не доступна
+```
+
+Это очень полезно для обработки ошибок — переменная ограничена блоком, где она нужна.
+
+### switch — когда лучше, чем if
+
+**Множество значений:**
+```go
+// Без switch — громоздко
+if day == "Monday" {
+    // ...
+} else if day == "Tuesday" {
+    // ...
+} else if day == "Wednesday" {
+    // ...
+}
+
+// Со switch — чисто
+switch day {
+case "Monday":
+    // ...
+case "Tuesday":
+    // ...
+case "Wednesday":
+    // ...
+}
+```
+
+### Особенности switch в Go
+
+**1. Нет автоматического "проваливания":**
+```go
+// В C нужен break после каждого case
+// В Go — break не нужен, выход автоматический
+
+switch x {
+case 1:
+    fmt.Println("one")
+    // автоматический выход
+case 2:
+    fmt.Println("two")
+}
+```
+
+**2. fallthrough — если нужно проваливание:**
+```go
+switch x {
+case 1:
+    fmt.Println("one")
+    fallthrough  // продолжить в следующий case
+case 2:
+    fmt.Println("also two")
+}
+```
+
+**3. Несколько значений в одном case:**
+```go
+switch day {
+case "Saturday", "Sunday":
+    fmt.Println("Weekend!")
+}
+```
+
+**4. switch без выражения (как if-else chain):**
+```go
+switch {
+case x < 0:
+    fmt.Println("negative")
+case x == 0:
+    fmt.Println("zero")
+default:
+    fmt.Println("positive")
+}
+```
+
+### default — значение по умолчанию
+
+`default` выполняется, если ни один case не совпал:
+```go
+switch color {
+case "red":
+    // ...
+case "green":
+    // ...
+default:
+    fmt.Println("Unknown color")
+}
+```
+</Theory>
+
+<Syntax>
+### if
+```go
+if условие {
+    // код если true
+}
+```
+
+### if-else
+```go
+if условие {
+    // код если true
+} else {
+    // код если false
+}
+```
+
+### if-else if-else
+```go
+if условие1 {
+    // код если условие1 true
+} else if условие2 {
+    // код если условие2 true
+} else {
+    // код если все условия false
+}
+```
+
+### if с инициализацией
+```go
+if инициализация; условие {
+    // переменная из инициализации доступна здесь
+}
+```
+
+### switch
+```go
+switch выражение {
+case значение1:
+    // код
+case значение2, значение3:
+    // код для нескольких значений
+default:
+    // код по умолчанию
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Базовый if
+```go
+package main
+
+import "fmt"
+
+func main() {
+    age := 20
+    
+    if age >= 18 {
+        fmt.Println("Совершеннолетний")
+    }
+    
+    temperature := -5
+    if temperature < 0 {
+        fmt.Println("Мороз!")
+    }
+}
+```
+
+### Пример 2: if-else
+```go
+package main
+
+import "fmt"
+
+func main() {
+    number := 7
+    
+    if number%2 == 0 {
+        fmt.Println(number, "— чётное")
+    } else {
+        fmt.Println(number, "— нечётное")
+    }
+    
+    // Проверка знака
+    x := -5
+    if x >= 0 {
+        fmt.Println("Неотрицательное")
+    } else {
+        fmt.Println("Отрицательное")
+    }
+}
+```
+
+### Пример 3: if-else if-else (оценки)
+```go
+package main
+
+import "fmt"
+
+func main() {
+    score := 85
+    
+    if score >= 90 {
+        fmt.Println("Отлично (A)")
+    } else if score >= 80 {
+        fmt.Println("Хорошо (B)")
+    } else if score >= 70 {
+        fmt.Println("Удовлетворительно (C)")
+    } else if score >= 60 {
+        fmt.Println("Посредственно (D)")
+    } else {
+        fmt.Println("Неудовлетворительно (F)")
+    }
+}
+```
+
+### Пример 4: if с инициализацией
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Переменная err видна только внутри if
+    if err := doSomething(); err != nil {
+        fmt.Println("Ошибка:", err)
+    } else {
+        fmt.Println("Успех!")
+    }
+    // err здесь недоступна
+    
+    // Практический пример
+    numbers := map[string]int{"one": 1, "two": 2}
+    if value, ok := numbers["three"]; ok {
+        fmt.Println("Найдено:", value)
+    } else {
+        fmt.Println("Не найдено")
+    }
+}
+
+func doSomething() error {
+    return nil
+}
+```
+
+### Пример 5: Базовый switch
+```go
+package main
+
+import "fmt"
+
+func main() {
+    day := 3
+    
+    switch day {
+    case 1:
+        fmt.Println("Понедельник")
+    case 2:
+        fmt.Println("Вторник")
+    case 3:
+        fmt.Println("Среда")
+    case 4:
+        fmt.Println("Четверг")
+    case 5:
+        fmt.Println("Пятница")
+    case 6, 7:  // несколько значений
+        fmt.Println("Выходной!")
+    default:
+        fmt.Println("Неизвестный день")
+    }
+}
+```
+
+### Пример 6: switch без выражения (как if-else)
+```go
+package main
+
+import "fmt"
+
+func main() {
+    score := 85
+    
+    // switch без выражения — как if-else
+    switch {
+    case score >= 90:
+        fmt.Println("Отлично")
+    case score >= 80:
+        fmt.Println("Хорошо")
+    case score >= 70:
+        fmt.Println("Удовлетворительно")
+    default:
+        fmt.Println("Нужно подтянуть")
+    }
+}
+```
+
+### Пример 7: fallthrough
+```go
+package main
+
+import "fmt"
+
+func main() {
+    x := 2
+    
+    switch x {
+    case 1:
+        fmt.Println("Один")
+    case 2:
+        fmt.Println("Два")
+        fallthrough  // принудительный переход к следующему case
+    case 3:
+        fmt.Println("Три (или два с fallthrough)")
+    case 4:
+        fmt.Println("Четыре")
+    }
+    // Вывод:
+    // Два
+    // Три (или два с fallthrough)
+}
+```
+
+### Пример 8: switch с инициализацией
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    // Переменная доступна внутри switch
+    switch today := time.Now().Weekday(); today {
+    case time.Saturday, time.Sunday:
+        fmt.Println("Выходной!")
+    default:
+        fmt.Println("Рабочий день:", today)
+    }
+}
+```
+
+### Пример 9: Практические примеры
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Категория возраста
+    age := 25
+    var category string
+    
+    switch {
+    case age < 13:
+        category = "Ребёнок"
+    case age < 20:
+        category = "Подросток"
+    case age < 60:
+        category = "Взрослый"
+    default:
+        category = "Пожилой"
+    }
+    fmt.Println("Категория:", category)
+    
+    // Калькулятор
+    a, b := 10, 3
+    operator := "+"
+    
+    var result int
+    switch operator {
+    case "+":
+        result = a + b
+    case "-":
+        result = a - b
+    case "*":
+        result = a * b
+    case "/":
+        if b != 0 {
+            result = a / b
+        }
+    default:
+        fmt.Println("Неизвестный оператор")
+        return
+    }
+    fmt.Printf("%d %s %d = %d\n", a, operator, b, result)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Скобки на новой строке
+```go
+// ❌ Неправильно — в Go открывающая скобка должна быть на той же строке
+if x > 0
+{
+    fmt.Println("Положительное")
+}
+
+// ✅ Правильно
+if x > 0 {
+    fmt.Println("Положительное")
+}
+```
+
+### 2. Присваивание вместо сравнения
+```go
+// ❌ В Go это ошибка компиляции (в отличие от C/C++)
+if x = 10 {  // syntax error
+    // ...
+}
+
+// ✅ Правильно
+if x == 10 {
+    // ...
+}
+```
+
+### 3. Условие не bool
+```go
+// ❌ Неправильно — условие должно быть bool
+x := 5
+if x {  // non-bool x used as condition
+    // ...
+}
+
+// ✅ Правильно
+if x != 0 {
+    // ...
+}
+if x > 0 {
+    // ...
+}
+```
+
+### 4. Забыли break в switch (а он не нужен!)
+```go
+// ❌ Лишний код — break не нужен в Go
+switch x {
+case 1:
+    fmt.Println("Один")
+    break  // не нужно!
+case 2:
+    fmt.Println("Два")
+    break  // не нужно!
+}
+
+// ✅ Правильно — Go автоматически выходит из case
+switch x {
+case 1:
+    fmt.Println("Один")
+case 2:
+    fmt.Println("Два")
+}
+```
+
+### 5. fallthrough в конце блока
+```go
+// ❌ Неправильно — fallthrough в последнем case
+switch x {
+case 1:
+    fallthrough
+case 2:
+    fallthrough  // cannot fallthrough final case in switch
+}
+
+// ✅ Правильно
+switch x {
+case 1:
+    fallthrough
+case 2:
+    fmt.Println("1 или 2")
+}
+```
+
+### 6. Область видимости переменной из if
+```go
+// ❌ Неправильно — переменная из if недоступна снаружи
+if x := getValue(); x > 0 {
+    fmt.Println(x)
+}
+fmt.Println(x)  // undefined: x
+
+// ✅ Правильно — объявите снаружи, если нужна после if
+x := getValue()
+if x > 0 {
+    fmt.Println(x)
+}
+fmt.Println(x)  // OK
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Простой if</Title>
+<Prompt>
+Напишите программу, которая проверяет, положительное ли число, и выводит соответствующее сообщение.
+</Prompt>
+<Hints>
+- Синтаксис: `if условие { ... }`
+- Скобки вокруг условия не нужны
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    num := 15
+    fmt.Println("Число:", num)
+    // Проверьте, положительное ли число
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Число: 15
+15 - положительное число
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: if-else</Title>
+<Prompt>
+Определите, чётное число или нечётное, используя if-else.
+</Prompt>
+<Hints>
+- Чётное: `num % 2 == 0`
+- Нечётное: `num % 2 != 0` или просто else
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    num := 7
+    fmt.Println("Число:", num)
+    // Определите чётность
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Число: 7
+7 - нечётное число
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: if-else if-else</Title>
+<Prompt>
+Определите знак числа: положительное, отрицательное или ноль.
+</Prompt>
+<Hints>
+- Проверяйте в порядке: > 0, < 0, else (== 0)
+- else if пишется раздельно
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    num := -5
+    fmt.Println("Число:", num)
+    // Определите знак числа
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Число: -5
+-5 - отрицательное число
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: switch по значению</Title>
+<Prompt>
+Используйте switch для определения названия дня недели по номеру (1-7).
+</Prompt>
+<Hints>
+- В Go break не нужен в switch
+- default обрабатывает все остальные случаи
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    day := 3
+    fmt.Println("День номер:", day)
+    // Используйте switch
+}
+```
+</StarterCode>
+<ExpectedOutput>
+День номер: 3
+Среда
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: switch без выражения (switch true)</Title>
+<Prompt>
+Используйте switch без выражения для определения оценки по баллам: A (90+), B (80-89), C (70-79), D (60-69), F (<60).
+</Prompt>
+<Hints>
+- `switch { case score >= 90: ... }`
+- Это аналог if-else if-else
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    score := 85
+    fmt.Println("Баллы:", score)
+    // Определите оценку через switch
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Баллы: 85
+Оценка: B (Хорошо)
+</ExpectedOutput>
+</Task>

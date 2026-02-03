@@ -1,0 +1,170 @@
+# OpenTelemetry: Gin и gRPC
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. Для web‑сервисов нужно инструментировать **входящий HTTP**, **исходящие HTTP** и **gRPC**
+2. В Gin — middleware (`otelgin`), в gRPC — interceptors (`otelgrpc`)
+3. **Propagation**: trace контекст должен проходить через HTTP headers и gRPC metadata
+4. В логах полезно добавлять `trace_id/span_id` (корреляция “лог ↔ трейс”)
+5. Начинайте с “сквозного” трейса одного запроса и только потом расширяйте покрытие
+</Overview>
+
+<Theory>
+### Что значит “инструментировать”
+
+Инструментация обычно делает две вещи:
+- создаёт span на входе (server span)
+- создаёт spans на исходящих вызовах (client spans)
+
+В итоге вы видите дерево:
+
+```
+HTTP /orders
+ ├─ SQL SELECT ...
+ ├─ HTTP call inventory-service
+ └─ gRPC call payment-service
+```
+
+### Корреляция log ↔ trace
+
+Когда в логе есть `trace_id`, вы можете:
+- по trace_id найти трейс и увидеть всё дерево
+- по трейсу понять, где ошибка, и вернуться в логи за деталями
+</Theory>
+
+<Syntax>
+### Gin middleware (otelgin)
+
+```go
+import "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
+r := gin.New()
+r.Use(otelgin.Middleware("my-service"))
+```
+
+### gRPC server interceptors (otelgrpc)
+
+```go
+import "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
+grpcServer := grpc.NewServer(
+	grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+	grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+)
+```
+
+### gRPC client interceptors (otelgrpc)
+
+```go
+conn, _ := grpc.Dial(
+	addr,
+	grpc.WithTransportCredentials(insecure.NewCredentials()),
+	grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+	grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+)
+```
+</Syntax>
+
+<Examples>
+### Пример: добавляем trace_id в access log
+
+```go
+sc := trace.SpanFromContext(ctx).SpanContext()
+logger.Info("request finished",
+	"trace_id", sc.TraceID().String(),
+	"span_id", sc.SpanID().String(),
+	"status", status,
+	"duration_ms", dur.Milliseconds(),
+)
+```
+
+### Пример: не ломайте контекст
+
+```go
+// ❌ Плохо
+ctx := context.Background()
+client.Do(req.WithContext(ctx))
+
+// ✅ Хорошо
+client.Do(req.WithContext(r.Context()))
+```
+</Examples>
+
+<Pitfalls>
+1. **Два TracerProvider**: не инициализируйте telemetry дважды
+2. **Нет propagator**: без `TraceContext` не будет сквозных трейсов через сервисы
+3. **Слишком много атрибутов**: не добавляйте payload/PII
+4. **Разные service.name**: если они одинаковые — граф в Jaeger будет путаться
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`
+- `https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc`
+</Links>
+
+<Task id="1" points="15">
+<Title>Задание 1: Инструментируйте Gin</Title>
+<Prompt>
+В capstone REST проекте добавьте `otelgin` middleware, проверьте, что на каждый HTTP запрос создаётся span и он виден в Jaeger/Tempo.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("otelgin: middleware подключён")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+otelgin: middleware подключён
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Инструментируйте gRPC</Title>
+<Prompt>
+В capstone gRPC проекте добавьте `otelgrpc` interceptors на сервере и клиенте. Проверьте, что у вызова есть server span и client span.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("otelgrpc: interceptors подключены")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+otelgrpc: interceptors подключены
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Trace ID в логах</Title>
+<Prompt>
+Добавьте `trace_id`/`span_id` в access log и в логи ошибок. Убедитесь, что по trace_id можно найти все связанные записи.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("logs: trace_id/span_id добавлены")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+logs: trace_id/span_id добавлены
+</ExpectedOutput>
+</Task>
+

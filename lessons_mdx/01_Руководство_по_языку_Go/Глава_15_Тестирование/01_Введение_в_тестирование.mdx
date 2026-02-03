@@ -1,0 +1,630 @@
+# Введение в тестирование в Go
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. **Тестирование** — неотъемлемая часть профессиональной разработки на Go
+2. **Пакет testing** — стандартная библиотека Go для написания тестов
+3. **Конвенции именования** — файлы `*_test.go`, функции `Test*`
+4. **go test** — встроенная команда для запуска тестов
+5. **Table-driven tests** — идиоматический подход к тестированию в Go
+6. **Coverage** — измерение покрытия кода тестами
+
+### Зачем нужны тесты?
+
+| Причина | Описание |
+|---------|----------|
+| Качество | Обнаружение ошибок до попадания в продакшен |
+| Рефакторинг | Безопасное изменение кода с гарантией работоспособности |
+| Документация | Тесты показывают, как использовать код |
+| CI/CD | Автоматическая проверка при каждом коммите |
+| Уверенность | Спокойный деплой в production |
+</Overview>
+
+<Theory>
+### Что такое тестирование?
+
+**Тестирование** — это процесс проверки того, что ваш код работает так, как задумано. Представьте, что вы построили машину. Перед тем как выехать на дорогу, вы проверите тормоза, двигатель, фары. Тестирование кода — это то же самое: мы проверяем, что каждая "деталь" программы работает правильно.
+
+### Почему тестирование важно?
+
+Без тестов вы узнаёте о багах только тогда, когда программа уже работает у пользователей. Это как узнать о неисправных тормозах только на скорости 100 км/ч — неприятно и опасно.
+
+**Тесты дают вам:**
+- **Уверенность** — вы знаете, что код работает
+- **Безопасность при изменениях** — можете рефакторить код, не боясь что-то сломать
+- **Документацию** — тесты показывают, как использовать ваш код
+- **Экономию времени** — баг, найденный при разработке, исправить в 10 раз дешевле, чем баг в продакшене
+
+### Как устроено тестирование в Go?
+
+Go имеет встроенную поддержку тестирования — пакет `testing`. Это не внешняя библиотека, а часть стандартной библиотеки, что говорит о важности тестирования в Go.
+
+**Основные правила:**
+
+1. **Файлы тестов** заканчиваются на `_test.go`:
+   - `math.go` — основной код
+   - `math_test.go` — тесты для этого кода
+
+2. **Функции тестов** начинаются с `Test`:
+   - `TestAdd` — тест функции Add
+   - `TestUserCreate` — тест создания пользователя
+
+3. **Параметр `t *testing.T`** — это объект, через который вы сообщаете о результатах теста
+
+### Анатомия теста
+
+Каждый тест следует паттерну **AAA** (Arrange-Act-Assert):
+
+```
+1. Arrange (Подготовка)  — готовим данные для теста
+2. Act (Действие)        — вызываем тестируемую функцию
+3. Assert (Проверка)     — проверяем результат
+```
+
+**Пример:**
+```go
+func TestAdd(t *testing.T) {
+    // Arrange — подготовка
+    a := 2
+    b := 3
+    expected := 5
+    
+    // Act — действие
+    result := Add(a, b)
+    
+    // Assert — проверка
+    if result != expected {
+        t.Errorf("Add(%d, %d) = %d; want %d", a, b, result, expected)
+    }
+}
+```
+
+### Виды тестов
+
+1. **Unit-тесты** — тестируют отдельные функции изолированно
+2. **Integration-тесты** — тестируют взаимодействие компонентов
+3. **End-to-end тесты** — тестируют всю систему целиком
+
+В этом уроке мы фокусируемся на unit-тестах — самом базовом и важном виде тестирования.
+
+### Запуск тестов
+
+Для запуска тестов используется команда `go test`:
+
+```bash
+go test           # запуск тестов в текущей папке
+go test ./...     # запуск тестов во всех подпапках
+go test -v        # подробный вывод (verbose)
+```
+
+Флаг `-v` показывает название каждого теста и его результат, что полезно при отладке.
+</Theory>
+
+<Syntax>
+### Структура тестового файла
+
+```go
+package mypackage  // тот же пакет, что и тестируемый код
+
+import "testing"
+
+func TestFunctionName(t *testing.T) {
+    // Arrange — подготовка
+    // Act — действие
+    // Assert — проверка
+}
+```
+
+### Основные методы *testing.T
+
+```go
+t.Error(args...)      // логирует ошибку, тест продолжается
+t.Errorf(format, ...) // логирует форматированную ошибку
+t.Fail()              // помечает тест как провалившийся
+t.FailNow()           // помечает и немедленно прекращает тест
+t.Fatal(args...)      // Error + FailNow
+t.Fatalf(format, ...) // Errorf + FailNow
+t.Log(args...)        // логирует информацию
+t.Logf(format, ...)   // логирует форматированное сообщение
+t.Skip(args...)       // пропускает тест
+t.Helper()            // помечает функцию как helper
+```
+
+### Команды go test
+
+```bash
+go test                    # запуск тестов в текущем пакете
+go test ./...              # запуск тестов во всех подпакетах
+go test -v                 # verbose — подробный вывод
+go test -run TestName      # запуск конкретного теста
+go test -cover             # показать покрытие
+go test -coverprofile=c.out # сохранить профиль покрытия
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Простейший тест
+
+**math.go:**
+```go
+package math
+
+func Add(a, b int) int {
+    return a + b
+}
+
+func Subtract(a, b int) int {
+    return a - b
+}
+```
+
+**math_test.go:**
+```go
+package math
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+    result := Add(2, 3)
+    expected := 5
+    
+    if result != expected {
+        t.Errorf("Add(2, 3) = %d; want %d", result, expected)
+    }
+}
+
+func TestSubtract(t *testing.T) {
+    result := Subtract(10, 4)
+    expected := 6
+    
+    if result != expected {
+        t.Errorf("Subtract(10, 4) = %d; want %d", result, expected)
+    }
+}
+```
+
+### Пример 2: Несколько проверок в одном тесте
+
+```go
+package math
+
+import "testing"
+
+func TestAddMultipleCases(t *testing.T) {
+    // Положительные числа
+    if Add(1, 1) != 2 {
+        t.Error("Add(1, 1) should be 2")
+    }
+    
+    // Ноль
+    if Add(0, 5) != 5 {
+        t.Error("Add(0, 5) should be 5")
+    }
+    
+    // Отрицательные числа
+    if Add(-1, -1) != -2 {
+        t.Error("Add(-1, -1) should be -2")
+    }
+    
+    // Смешанные
+    if Add(-5, 10) != 5 {
+        t.Error("Add(-5, 10) should be 5")
+    }
+}
+```
+
+### Пример 3: Использование t.Fatal
+
+```go
+package user
+
+import "testing"
+
+type User struct {
+    Name string
+    Age  int
+}
+
+func GetUser(id int) (*User, error) {
+    if id <= 0 {
+        return nil, fmt.Errorf("invalid id: %d", id)
+    }
+    return &User{Name: "John", Age: 30}, nil
+}
+
+func TestGetUser(t *testing.T) {
+    user, err := GetUser(1)
+    
+    // Если ошибка — дальше проверять бессмысленно
+    if err != nil {
+        t.Fatalf("GetUser(1) returned error: %v", err)
+    }
+    
+    // Проверяем поля только если user не nil
+    if user.Name != "John" {
+        t.Errorf("expected name John, got %s", user.Name)
+    }
+    
+    if user.Age != 30 {
+        t.Errorf("expected age 30, got %d", user.Age)
+    }
+}
+```
+
+### Пример 4: Тестирование ошибок
+
+```go
+package validator
+
+import (
+    "errors"
+    "testing"
+)
+
+var ErrEmpty = errors.New("value is empty")
+var ErrTooShort = errors.New("value is too short")
+
+func Validate(s string) error {
+    if s == "" {
+        return ErrEmpty
+    }
+    if len(s) < 3 {
+        return ErrTooShort
+    }
+    return nil
+}
+
+func TestValidate(t *testing.T) {
+    // Тест на пустую строку
+    err := Validate("")
+    if err != ErrEmpty {
+        t.Errorf("Validate(\"\") = %v; want ErrEmpty", err)
+    }
+    
+    // Тест на короткую строку
+    err = Validate("ab")
+    if err != ErrTooShort {
+        t.Errorf("Validate(\"ab\") = %v; want ErrTooShort", err)
+    }
+    
+    // Тест на валидную строку
+    err = Validate("hello")
+    if err != nil {
+        t.Errorf("Validate(\"hello\") = %v; want nil", err)
+    }
+}
+```
+
+### Пример 5: Тест с пропуском
+
+```go
+package database
+
+import (
+    "os"
+    "testing"
+)
+
+func TestDatabaseConnection(t *testing.T) {
+    // Пропускаем тест, если нет переменной окружения
+    dbURL := os.Getenv("DATABASE_URL")
+    if dbURL == "" {
+        t.Skip("DATABASE_URL not set, skipping integration test")
+    }
+    
+    // ... тест подключения к БД
+}
+
+func TestSlowOperation(t *testing.T) {
+    // Пропускаем при коротком запуске
+    if testing.Short() {
+        t.Skip("skipping slow test in short mode")
+    }
+    
+    // ... долгий тест
+}
+```
+
+### Пример 6: Вспомогательные функции (helpers)
+
+```go
+package user
+
+import "testing"
+
+// assertEqual — вспомогательная функция
+func assertEqual(t *testing.T, got, want interface{}) {
+    t.Helper()  // помечаем как helper — ошибка покажет строку вызова
+    if got != want {
+        t.Errorf("got %v; want %v", got, want)
+    }
+}
+
+func TestWithHelper(t *testing.T) {
+    assertEqual(t, Add(2, 2), 4)
+    assertEqual(t, Add(0, 0), 0)
+    assertEqual(t, Add(-1, 1), 0)
+}
+```
+
+### Пример 7: Полный пример с реальной функцией
+
+**stringutil.go:**
+```go
+package stringutil
+
+import "strings"
+
+// Reverse переворачивает строку
+func Reverse(s string) string {
+    runes := []rune(s)
+    for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+        runes[i], runes[j] = runes[j], runes[i]
+    }
+    return string(runes)
+}
+
+// IsPalindrome проверяет, является ли строка палиндромом
+func IsPalindrome(s string) bool {
+    s = strings.ToLower(s)
+    return s == Reverse(s)
+}
+```
+
+**stringutil_test.go:**
+```go
+package stringutil
+
+import "testing"
+
+func TestReverse(t *testing.T) {
+    result := Reverse("hello")
+    if result != "olleh" {
+        t.Errorf("Reverse(\"hello\") = %q; want \"olleh\"", result)
+    }
+}
+
+func TestReverseEmpty(t *testing.T) {
+    result := Reverse("")
+    if result != "" {
+        t.Errorf("Reverse(\"\") = %q; want \"\"", result)
+    }
+}
+
+func TestReverseUnicode(t *testing.T) {
+    result := Reverse("Привет")
+    if result != "тевирП" {
+        t.Errorf("Reverse(\"Привет\") = %q; want \"тевирП\"", result)
+    }
+}
+
+func TestIsPalindrome(t *testing.T) {
+    if !IsPalindrome("radar") {
+        t.Error("radar should be a palindrome")
+    }
+    
+    if !IsPalindrome("Radar") {
+        t.Error("Radar should be a palindrome (case insensitive)")
+    }
+    
+    if IsPalindrome("hello") {
+        t.Error("hello should not be a palindrome")
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неправильное имя файла или функции
+
+```go
+// ❌ НЕПРАВИЛЬНО — файл не будет найден
+// Файл: math_tests.go (должен быть math_test.go)
+
+// ❌ НЕПРАВИЛЬНО — функция не будет запущена
+func testAdd(t *testing.T) {  // должно быть TestAdd
+    // ...
+}
+
+// ❌ НЕПРАВИЛЬНО — неправильная сигнатура
+func TestAdd(t testing.T) {  // должно быть *testing.T
+    // ...
+}
+
+// ✅ ПРАВИЛЬНО
+// Файл: math_test.go
+func TestAdd(t *testing.T) {
+    // ...
+}
+```
+
+### 2. Использование Error вместо Fatal
+
+```go
+// ❌ ПЛОХО — продолжает выполнение с nil указателем
+func TestUser(t *testing.T) {
+    user, err := GetUser(1)
+    if err != nil {
+        t.Error(err)  // тест продолжится!
+    }
+    fmt.Println(user.Name)  // panic: nil pointer
+}
+
+// ✅ ХОРОШО — останавливает тест
+func TestUser(t *testing.T) {
+    user, err := GetUser(1)
+    if err != nil {
+        t.Fatal(err)  // тест остановится
+    }
+    fmt.Println(user.Name)  // безопасно
+}
+```
+
+### 3. Недостаточно информативные сообщения
+
+```go
+// ❌ ПЛОХО
+if result != expected {
+    t.Error("test failed")
+}
+
+// ✅ ХОРОШО
+if result != expected {
+    t.Errorf("Add(%d, %d) = %d; want %d", a, b, result, expected)
+}
+```
+
+### 4. Забыли t.Helper()
+
+```go
+// ❌ ПЛОХО — ошибка покажет строку внутри helper
+func checkEqual(t *testing.T, got, want int) {
+    if got != want {
+        t.Errorf("got %d; want %d", got, want)  // ошибка тут
+    }
+}
+
+// ✅ ХОРОШО — ошибка покажет строку вызова
+func checkEqual(t *testing.T, got, want int) {
+    t.Helper()
+    if got != want {
+        t.Errorf("got %d; want %d", got, want)
+    }
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Первый тест</Title>
+<Prompt>
+Напишите функцию `Multiply(a, b int) int` и тест для неё.
+</Prompt>
+<StarterCode>
+```go
+// math.go
+package math
+
+func Multiply(a, b int) int {
+    // Реализуйте функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+=== RUN   TestMultiply
+--- PASS: TestMultiply (0.00s)
+PASS
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Тест деления с ошибкой</Title>
+<Prompt>
+Напишите функцию `Divide(a, b int) (int, error)`, которая возвращает ошибку при делении на ноль. Напишите тесты для обоих случаев.
+</Prompt>
+<StarterCode>
+```go
+// math.go
+package math
+
+import "errors"
+
+var ErrDivisionByZero = errors.New("division by zero")
+
+func Divide(a, b int) (int, error) {
+    // Реализуйте функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+=== RUN   TestDivide
+--- PASS: TestDivide (0.00s)
+=== RUN   TestDivideByZero
+--- PASS: TestDivideByZero (0.00s)
+PASS
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Тест с несколькими проверками</Title>
+<Prompt>
+Напишите функцию `Abs(x int) int` и тест с проверкой положительных, отрицательных чисел и нуля.
+</Prompt>
+<StarterCode>
+```go
+// math.go
+package math
+
+func Abs(x int) int {
+    // Реализуйте функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+=== RUN   TestAbs
+--- PASS: TestAbs (0.00s)
+PASS
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Helper функция</Title>
+<Prompt>
+Создайте helper-функцию `assertEqual` и используйте её для сокращения кода тестов.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "testing"
+)
+
+// TODO: Напишите тест
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+=== RUN   TestWithHelper
+--- PASS: TestWithHelper (0.00s)
+PASS
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Тест строковой функции</Title>
+<Prompt>
+Напишите функцию `Reverse(s string) string` и тест для неё.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "testing"
+)
+
+// TODO: Напишите тест
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+=== RUN   TestReverse
+--- PASS: TestReverse (0.00s)
+PASS
+</ExpectedOutput>
+</Task>

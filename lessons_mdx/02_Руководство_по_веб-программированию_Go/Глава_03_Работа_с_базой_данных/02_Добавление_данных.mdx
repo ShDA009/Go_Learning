@@ -1,0 +1,594 @@
+# Добавление данных
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **db.Exec** — выполнение INSERT, UPDATE, DELETE
+2. **FormValue** — получение данных из формы
+3. **Плейсхолдеры** — защита от SQL инъекций
+4. **Result.LastInsertId** — ID добавленной записи
+5. **Redirect** — перенаправление после добавления
+</Overview>
+
+<Theory>
+### Паттерн: форма → обработчик → редирект
+
+1. **GET** — показать пустую форму
+2. **POST** — обработать данные, сохранить в БД
+3. **Redirect** — перенаправить на список (PRG паттерн)
+
+```go
+func createHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodGet {
+        // Показать форму
+        tmpl.Execute(w, nil)
+        return
+    }
+    
+    // POST — обработка формы
+    name := r.FormValue("name")
+    price := r.FormValue("price")
+    
+    _, err := db.Exec(
+        "INSERT INTO products (name, price) VALUES (?, ?)",
+        name, price,
+    )
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    // Редирект на список
+    http.Redirect(w, r, "/products", http.StatusSeeOther)
+}
+```
+
+### Получение ID новой записи
+
+```go
+result, _ := db.Exec("INSERT INTO products (name) VALUES (?)", name)
+id, _ := result.LastInsertId()
+fmt.Println("Новый ID:", id)
+```
+
+### Валидация перед сохранением
+
+```go
+func createHandler(w http.ResponseWriter, r *http.Request) {
+    name := strings.TrimSpace(r.FormValue("name"))
+    priceStr := r.FormValue("price")
+    
+    // Валидация
+    if name == "" {
+        http.Error(w, "Имя обязательно", http.StatusBadRequest)
+        return
+    }
+    
+    price, err := strconv.ParseFloat(priceStr, 64)
+    if err != nil || price < 0 {
+        http.Error(w, "Некорректная цена", http.StatusBadRequest)
+        return
+    }
+    
+    // Сохранение
+    db.Exec("INSERT INTO products (name, price) VALUES (?, ?)", name, price)
+    http.Redirect(w, r, "/products", http.StatusSeeOther)
+}
+```
+
+### PRG (Post/Redirect/Get) паттерн
+
+**Без редиректа:**
+- Пользователь нажимает F5 → повторная отправка формы
+- Дубликаты в БД!
+
+**С редиректом:**
+- POST → сохранение → Redirect (303) → GET список
+- F5 обновляет только список
+
+```go
+http.Redirect(w, r, "/products", http.StatusSeeOther)  // 303
+```
+
+### Транзакции при сложных вставках
+
+```go
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+result, _ := tx.Exec("INSERT INTO orders (user_id) VALUES (?)", userID)
+orderID, _ := result.LastInsertId()
+
+for _, item := range items {
+    tx.Exec("INSERT INTO order_items (order_id, product_id) VALUES (?, ?)",
+        orderID, item.ProductID)
+}
+
+tx.Commit()
+```
+</Theory>
+
+<Syntax>
+### Добавление записи
+
+```go
+result, err := db.Exec("INSERT INTO table (col1, col2) VALUES (?, ?)", val1, val2)
+
+// Получение ID новой записи
+id, err := result.LastInsertId()
+
+// Количество затронутых строк
+affected, err := result.RowsAffected()
+```
+
+### Получение данных формы
+
+```go
+name := r.FormValue("name")
+price := r.FormValue("price")
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Форма добавления (HTML)
+
+**templates/create.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Product</title>
+    <style>
+        form { max-width: 400px; }
+        label { display: block; margin-top: 10px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; }
+        button { margin-top: 15px; padding: 10px 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Add New Product</h1>
+    
+    {{ if .Error }}
+    <p class="error">{{ .Error }}</p>
+    {{ end }}
+    
+    <form action="/create" method="POST">
+        <label>Name:
+            <input type="text" name="name" required>
+        </label>
+        
+        <label>Price:
+            <input type="number" name="price" required min="0">
+        </label>
+        
+        <button type="submit">Add Product</button>
+    </form>
+    
+    <p><a href="/">Back to list</a></p>
+</body>
+</html>
+```
+
+### Обработчик добавления
+
+```go
+package main
+
+import (
+    "database/sql"
+    "html/template"
+    "net/http"
+    "strconv"
+    
+    "github.com/gorilla/mux"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price int
+}
+
+var database *sql.DB
+
+func main() {
+    var err error
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    router := mux.NewRouter()
+    router.HandleFunc("/", listHandler).Methods("GET")
+    router.HandleFunc("/create", createHandler).Methods("GET", "POST")
+    
+    http.ListenAndServe(":8080", router)
+}
+
+func createHandler(w http.ResponseWriter, r *http.Request) {
+    // GET — показать форму
+    if r.Method == http.MethodGet {
+        tmpl := template.Must(template.ParseFiles("templates/create.html"))
+        tmpl.Execute(w, nil)
+        return
+    }
+    
+    // POST — обработать форму
+    name := r.FormValue("name")
+    priceStr := r.FormValue("price")
+    
+    // Валидация
+    if name == "" {
+        showError(w, "Name is required")
+        return
+    }
+    
+    price, err := strconv.Atoi(priceStr)
+    if err != nil || price < 0 {
+        showError(w, "Invalid price")
+        return
+    }
+    
+    // Добавление в БД
+    result, err := database.Exec(
+        "INSERT INTO products (name, price) VALUES (?, ?)",
+        name, price,
+    )
+    if err != nil {
+        showError(w, "Database error: "+err.Error())
+        return
+    }
+    
+    // Получаем ID новой записи (опционально)
+    id, _ := result.LastInsertId()
+    _ = id  // можно использовать для редиректа на страницу товара
+    
+    // Перенаправляем на список
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func showError(w http.ResponseWriter, message string) {
+    tmpl := template.Must(template.ParseFiles("templates/create.html"))
+    tmpl.Execute(w, map[string]string{"Error": message})
+}
+
+func listHandler(w http.ResponseWriter, r *http.Request) {
+    rows, _ := database.Query("SELECT id, name, price FROM products")
+    defer rows.Close()
+    
+    var products []Product
+    for rows.Next() {
+        var p Product
+        rows.Scan(&p.ID, &p.Name, &p.Price)
+        products = append(products, p)
+    }
+    
+    tmpl := template.Must(template.ParseFiles("templates/list.html"))
+    tmpl.Execute(w, products)
+}
+```
+
+### Список с кнопкой добавления
+
+**templates/list.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; max-width: 600px; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+        th { background-color: #4CAF50; color: white; }
+        .actions { margin-bottom: 20px; }
+        .btn { padding: 10px 20px; background: #4CAF50; color: white; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h1>Products</h1>
+    
+    <div class="actions">
+        <a href="/create" class="btn">+ Add Product</a>
+    </div>
+    
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Price</th>
+        </tr>
+        {{ range . }}
+        <tr>
+            <td>{{ .ID }}</td>
+            <td>{{ .Name }}</td>
+            <td>${{ .Price }}</td>
+        </tr>
+        {{ else }}
+        <tr>
+            <td colspan="3">No products yet</td>
+        </tr>
+        {{ end }}
+    </table>
+</body>
+</html>
+```
+
+### Добавление с возвратом ID
+
+```go
+func createAndGetID(name string, price int) (int64, error) {
+    result, err := database.Exec(
+        "INSERT INTO products (name, price) VALUES (?, ?)",
+        name, price,
+    )
+    if err != nil {
+        return 0, err
+    }
+    
+    return result.LastInsertId()
+}
+
+func createHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodPost {
+        name := r.FormValue("name")
+        price, _ := strconv.Atoi(r.FormValue("price"))
+        
+        id, err := createAndGetID(name, price)
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        
+        // Редирект на страницу нового товара
+        http.Redirect(w, r, "/product/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+        return
+    }
+    
+    // GET — показать форму
+    tmpl := template.Must(template.ParseFiles("templates/create.html"))
+    tmpl.Execute(w, nil)
+}
+```
+
+### Валидация данных
+
+```go
+type ProductForm struct {
+    Name   string
+    Price  int
+    Errors map[string]string
+}
+
+func (f *ProductForm) Validate() bool {
+    f.Errors = make(map[string]string)
+    
+    if strings.TrimSpace(f.Name) == "" {
+        f.Errors["name"] = "Name is required"
+    } else if len(f.Name) > 100 {
+        f.Errors["name"] = "Name is too long (max 100 characters)"
+    }
+    
+    if f.Price < 0 {
+        f.Errors["price"] = "Price cannot be negative"
+    } else if f.Price > 1000000 {
+        f.Errors["price"] = "Price is too high"
+    }
+    
+    return len(f.Errors) == 0
+}
+
+func createHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodPost {
+        price, _ := strconv.Atoi(r.FormValue("price"))
+        
+        form := ProductForm{
+            Name:  r.FormValue("name"),
+            Price: price,
+        }
+        
+        if !form.Validate() {
+            tmpl := template.Must(template.ParseFiles("templates/create.html"))
+            tmpl.Execute(w, form)
+            return
+        }
+        
+        database.Exec(
+            "INSERT INTO products (name, price) VALUES (?, ?)",
+            form.Name, form.Price,
+        )
+        
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+        return
+    }
+    
+    tmpl := template.Must(template.ParseFiles("templates/create.html"))
+    tmpl.Execute(w, ProductForm{})
+}
+```
+
+**templates/create.html с валидацией:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Product</title>
+    <style>
+        .error { color: red; font-size: 0.9em; }
+        input.invalid { border-color: red; }
+    </style>
+</head>
+<body>
+    <h1>Add New Product</h1>
+    
+    <form action="/create" method="POST">
+        <label>Name:
+            <input type="text" name="name" value="{{ .Name }}"
+                   {{ if .Errors.name }}class="invalid"{{ end }}>
+            {{ if .Errors.name }}<span class="error">{{ .Errors.name }}</span>{{ end }}
+        </label>
+        
+        <label>Price:
+            <input type="number" name="price" value="{{ .Price }}"
+                   {{ if .Errors.price }}class="invalid"{{ end }}>
+            {{ if .Errors.price }}<span class="error">{{ .Errors.price }}</span>{{ end }}
+        </label>
+        
+        <button type="submit">Add Product</button>
+    </form>
+</body>
+</html>
+```
+</Examples>
+
+<Pitfalls>
+### 1. SQL инъекции
+
+```go
+// ❌ НИКОГДА так не делайте
+query := "INSERT INTO products (name) VALUES ('" + name + "')"
+
+// ✅ Используйте плейсхолдеры
+database.Exec("INSERT INTO products (name) VALUES (?)", name)
+```
+
+### 2. Не проверяют ошибки
+
+```go
+// ❌ Игнорирование ошибки
+database.Exec("INSERT INTO products (name, price) VALUES (?, ?)", name, price)
+
+// ✅ Проверяйте ошибку
+_, err := database.Exec("INSERT INTO products (name, price) VALUES (?, ?)", name, price)
+if err != nil {
+    // обработка ошибки
+}
+```
+
+### 3. Двойная отправка формы
+
+```go
+// ❌ После POST остаёмся на той же странице
+if r.Method == http.MethodPost {
+    database.Exec(...)
+    fmt.Fprint(w, "Added!")  // Refresh = дублирование
+}
+
+// ✅ Редирект после успешного добавления
+if r.Method == http.MethodPost {
+    database.Exec(...)
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Redis клиент</Title>
+<Prompt>
+Подключитесь к Redis.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Redis: rdb := redis.NewClient(&redis.Options{Addr: \"localhost:6379\"})")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Redis: rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Redis GET/SET</Title>
+<Prompt>
+Базовые операции Redis.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("GET/SET: rdb.Set(ctx, \"key\", \"value\", 0); rdb.Get(ctx, \"key\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+GET/SET: rdb.Set(ctx, "key", "value", 0); rdb.Get(ctx, "key")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Redis TTL</Title>
+<Prompt>
+Установите время жизни ключа.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("TTL: rdb.Set(ctx, \"key\", \"value\", 1*time.Hour)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+TTL: rdb.Set(ctx, "key", "value", 1*time.Hour)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Кеширование в Redis</Title>
+<Prompt>
+Кешируйте результаты запросов.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Кеш: check cache -> return OR fetch -> store -> return")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Кеш: check cache -> return OR fetch -> store -> return
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Redis Pub/Sub</Title>
+<Prompt>
+Используйте Pub/Sub.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Pub/Sub: rdb.Publish(), rdb.Subscribe()")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Pub/Sub: rdb.Publish(), rdb.Subscribe()
+</ExpectedOutput>
+</Task>

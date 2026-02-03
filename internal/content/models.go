@@ -7,18 +7,34 @@ type SectionKind string
 
 const (
 	SectionOverview SectionKind = "overview"
+	SectionTheory   SectionKind = "theory"
 	SectionSyntax   SectionKind = "syntax"
 	SectionExamples SectionKind = "examples"
 	SectionPitfalls SectionKind = "pitfalls"
+	SectionLinks    SectionKind = "links"
 	SectionExtra    SectionKind = "extra"
 )
+
+// Course — руководство/курс (верхний уровень иерархии).
+type Course struct {
+	ID          int64
+	Slug        string
+	Title       string
+	Description string
+	Icon        string
+	OrderIndex  int
+}
 
 // Module — раздел курса (например, "Основы", "Функции", "Структуры").
 type Module struct {
 	ID         int64
+	CourseID   int64
 	Slug       string
 	Title      string
 	OrderIndex int
+
+	// Связанные данные
+	Course *Course
 }
 
 // Lesson — урок в модуле.
@@ -56,6 +72,8 @@ type Task struct {
 	LessonID         int64
 	Title            string
 	PromptMD         string
+	Criteria         string // Критерии приёмки
+	Hints            string // Подсказки
 	StarterCode      string
 	TestsGo          string
 	ExpectedOutput   string // Ожидаемый вывод программы

@@ -1,0 +1,619 @@
+# Горутины (Goroutines)
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Горутина** — легковесный поток выполнения, управляемый Go runtime
+2. **Оператор go** — запускает функцию как отдельную горутину
+3. **Параллелизм** — горутины могут выполняться одновременно на разных ядрах CPU
+4. **Главная горутина** — функция `main()`, при её завершении программа прекращает работу
+5. **Независимость** — порядок выполнения горутин недетерминирован
+6. **Эффективность** — горутины используют меньше памяти, чем потоки ОС (~2KB vs ~1MB)
+</Overview>
+
+<Theory>
+### Что такое горутина?
+
+**Горутина** — это легковесный поток, управляемый Go runtime, а не операционной системой. Это одна из главных фишек Go.
+
+```go
+go doSomething()  // запускает doSomething в отдельной горутине
+```
+
+### Горутины vs Потоки ОС
+
+| Характеристика | Поток ОС | Горутина |
+|----------------|----------|----------|
+| Память | ~1MB стек | ~2KB стек |
+| Создание | Медленно (syscall) | Быстро |
+| Переключение | Дорого | Дёшево |
+| Количество | Тысячи | Миллионы |
+
+В Go можно создать **100,000+ горутин** без проблем. Попробуйте это с потоками — система упадёт.
+
+### Как работает планировщик Go?
+
+Go имеет собственный планировщик (scheduler):
+
+```
+Потоки ОС (M):   [M1]    [M2]    [M3]
+                  ↓       ↓       ↓
+Горутины (G):   G1,G4   G2,G5   G3,G6
+```
+
+Небольшое количество потоков ОС (по умолчанию = число CPU) исполняет множество горутин. Планировщик переключает горутины без участия ОС.
+
+### Запуск горутины
+
+```go
+go funcName()           // именованная функция
+
+go func() {             // анонимная функция
+    // код
+}()                     // () важно — это вызов!
+
+go func(x int) {        // с параметром
+    fmt.Println(x)
+}(42)
+```
+
+### Главная горутина
+
+`main()` — это тоже горутина. Когда она завершается, **программа завершается**, даже если другие горутины ещё работают:
+
+```go
+func main() {
+    go longTask()  // запустили
+    // main завершился — longTask прервётся!
+}
+```
+
+### Как дождаться горутин?
+
+**Плохо — time.Sleep:**
+```go
+go doWork()
+time.Sleep(time.Second)  // угадываем время
+```
+
+**Хорошо — sync.WaitGroup:**
+```go
+var wg sync.WaitGroup
+wg.Add(1)
+go func() {
+    defer wg.Done()
+    doWork()
+}()
+wg.Wait()  // ждём завершения
+```
+
+### Недетерминированность
+
+Порядок выполнения горутин **не гарантирован**:
+
+```go
+for i := 0; i < 3; i++ {
+    go fmt.Println(i)
+}
+// Может вывести: 2, 0, 1 или 0, 1, 2 или любой порядок
+```
+
+### Ловушка: захват переменной цикла
+
+```go
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // Вероятно выведет 3, 3, 3!
+    }()
+}
+```
+
+**Решение:**
+```go
+for i := 0; i < 3; i++ {
+    i := i  // создаём локальную копию
+    go func() {
+        fmt.Println(i)  // теперь OK
+    }()
+}
+```
+</Theory>
+
+<Syntax>
+### Запуск горутины
+
+```go
+go functionName(args)      // именованная функция
+
+go func() {               // анонимная функция
+    // код
+}()
+
+go func(param int) {      // анонимная с параметрами
+    // код
+}(value)
+```
+
+### Ожидание горутин
+
+```go
+// Простая задержка (НЕ рекомендуется в продакшене)
+time.Sleep(time.Second)
+
+// Ожидание ввода
+fmt.Scanln()
+
+// Правильный способ — sync.WaitGroup (см. следующий урок)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый пример горутины
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func sayHello(name string) {
+    for i := 0; i < 3; i++ {
+        fmt.Printf("Hello from %s! (%d)\n", name, i)
+        time.Sleep(100 * time.Millisecond)
+    }
+}
+
+func main() {
+    // Запускаем горутину
+    go sayHello("Goroutine")
+    
+    // main продолжает выполнение
+    sayHello("Main")
+    
+    // Без задержки программа завершится до выполнения горутины
+}
+```
+
+### Несколько горутин
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(id int) {
+    fmt.Printf("Worker %d: started\n", id)
+    time.Sleep(time.Second)
+    fmt.Printf("Worker %d: finished\n", id)
+}
+
+func main() {
+    fmt.Println("Starting workers...")
+    
+    // Запускаем 5 горутин
+    for i := 1; i <= 5; i++ {
+        go worker(i)
+    }
+    
+    // Ждём завершения
+    time.Sleep(2 * time.Second)
+    fmt.Println("All workers done!")
+}
+```
+
+### Анонимная функция как горутина
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    numbers := []int{2, 4, 6, 8, 10}
+    
+    for _, num := range numbers {
+        // ВАЖНО: передаём num как параметр!
+        go func(n int) {
+            fmt.Printf("Square of %d = %d\n", n, n*n)
+        }(num)
+    }
+    
+    time.Sleep(time.Second)
+}
+```
+
+### Возврат значения из горутины (через канал)
+
+```go
+package main
+
+import "fmt"
+
+func sum(nums []int, result chan int) {
+    total := 0
+    for _, n := range nums {
+        total += n
+    }
+    result <- total  // отправляем результат в канал
+}
+
+func main() {
+    numbers := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    
+    ch := make(chan int)
+    
+    // Делим работу между горутинами
+    mid := len(numbers) / 2
+    go sum(numbers[:mid], ch)
+    go sum(numbers[mid:], ch)
+    
+    // Получаем результаты
+    x, y := <-ch, <-ch
+    fmt.Printf("Sum: %d + %d = %d\n", x, y, x+y)
+}
+```
+
+### Горутина с замыканием
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func main() {
+    message := "Hello"
+    
+    go func() {
+        // Горутина имеет доступ к переменным внешней области
+        fmt.Println(message)
+    }()
+    
+    // ⚠️ Изменение переменной влияет на горутину!
+    message = "Goodbye"
+    
+    time.Sleep(100 * time.Millisecond)
+}
+```
+
+### Практический пример: параллельная загрузка
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func downloadFile(url string) {
+    fmt.Printf("Downloading %s...\n", url)
+    time.Sleep(2 * time.Second)  // имитация загрузки
+    fmt.Printf("Downloaded %s!\n", url)
+}
+
+func main() {
+    urls := []string{
+        "https://example.com/file1.txt",
+        "https://example.com/file2.txt",
+        "https://example.com/file3.txt",
+    }
+    
+    start := time.Now()
+    
+    // Последовательная загрузка: 6 секунд
+    // for _, url := range urls {
+    //     downloadFile(url)
+    // }
+    
+    // Параллельная загрузка: ~2 секунды
+    for _, url := range urls {
+        go downloadFile(url)
+    }
+    
+    time.Sleep(3 * time.Second)
+    
+    fmt.Printf("Total time: %v\n", time.Since(start))
+}
+```
+
+### GOMAXPROCS — управление параллелизмом
+
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+)
+
+func main() {
+    // Количество доступных CPU
+    numCPU := runtime.NumCPU()
+    fmt.Printf("Number of CPUs: %d\n", numCPU)
+    
+    // Текущее количество используемых CPU
+    currentProcs := runtime.GOMAXPROCS(0)
+    fmt.Printf("Current GOMAXPROCS: %d\n", currentProcs)
+    
+    // Установить количество CPU для горутин
+    runtime.GOMAXPROCS(2)
+    fmt.Printf("Set GOMAXPROCS to: 2\n")
+    
+    // Количество горутин
+    fmt.Printf("Number of goroutines: %d\n", runtime.NumGoroutine())
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Программа завершается раньше горутины
+
+```go
+func main() {
+    go func() {
+        fmt.Println("Hello from goroutine")
+    }()
+    // ❌ main завершится раньше, чем горутина выполнится
+}
+
+// ✅ Нужно дождаться завершения горутины
+func main() {
+    done := make(chan bool)
+    go func() {
+        fmt.Println("Hello from goroutine")
+        done <- true
+    }()
+    <-done  // ждём сигнал
+}
+```
+
+### 2. Замыкание на переменной цикла
+
+```go
+// ❌ НЕПРАВИЛЬНО — все горутины получат одно значение
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // вероятно напечатает "3, 3, 3"
+    }()
+}
+
+// ✅ ПРАВИЛЬНО — передаём как параметр
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        fmt.Println(n)  // напечатает "0, 1, 2" (в любом порядке)
+    }(i)
+}
+
+// ✅ Или создаём локальную переменную
+for i := 0; i < 3; i++ {
+    i := i  // создаём локальную копию
+    go func() {
+        fmt.Println(i)
+    }()
+}
+```
+
+### 3. Использование time.Sleep для синхронизации
+
+```go
+// ❌ ПЛОХО — ненадёжно
+go doWork()
+time.Sleep(time.Second)
+
+// ✅ ХОРОШО — используйте WaitGroup или каналы
+var wg sync.WaitGroup
+wg.Add(1)
+go func() {
+    defer wg.Done()
+    doWork()
+}()
+wg.Wait()
+```
+
+### 4. Горутина без завершения
+
+```go
+// ❌ Утечка горутины — никогда не завершится
+go func() {
+    for {
+        // бесконечный цикл без выхода
+    }
+}()
+
+// ✅ Используйте канал для отмены
+done := make(chan struct{})
+go func() {
+    for {
+        select {
+        case <-done:
+            return
+        default:
+            // работа
+        }
+    }
+}()
+close(done)  // сигнал на завершение
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: panic</Title>
+<Prompt>
+Вызовите panic и посмотрите результат.
+</Prompt>
+<Hints>
+- panic для неисправимых ошибок
+- Код после panic не выполняется
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Вызовите panic
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Начало
+panic: критическая ошибка
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="20">
+<Title>Задание 2: recover</Title>
+<Prompt>
+Перехватите panic через recover.
+</Prompt>
+<Hints>
+- defer func() { if r := recover(); r != nil {...} }()
+- recover только в defer
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Вызовите panic
+// TODO: Реализуйте recover в defer
+// TODO: Используйте defer
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Перехвачено: что-то пошло не так
+Программа продолжается
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: defer выполняется при panic</Title>
+<Prompt>
+Покажите, что defer выполняется даже при panic.
+</Prompt>
+<Hints>
+- defer регистрируется в стеке
+- panic раскручивает стек, вызывая defer
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Вызовите panic
+// TODO: Используйте defer
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Открытие ресурса
+defer: закрытие ресурса
+panic: ошибка
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Паника в горутине</Title>
+<Prompt>
+Покажите, что panic в горутине нужно обрабатывать в ней же.
+</Prompt>
+<Hints>
+- Каждая горутина должна свой recover
+- Без recover паника убивает программу
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+// TODO: Вызовите panic
+// TODO: Реализуйте recover в defer
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Горутина: перехвачено
+Главная: завершено
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: panic с типом ошибки</Title>
+<Prompt>
+Используйте error в panic.
+</Prompt>
+<Hints>
+- if err, ok := r.(error); ok {...}
+- Можно panic любым типом
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Вызовите panic
+// TODO: Реализуйте recover в defer
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: недопустимая операция
+</ExpectedOutput>
+</Task>

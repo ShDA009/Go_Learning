@@ -38,9 +38,35 @@ func (m *MarkdownImporter) Import(ctx context.Context) error {
 		return fmt.Errorf("find guides: %w", err)
 	}
 
+	// Иконки для курсов
+	courseIcons := map[int]string{
+		1: "📘", // Руководство по языку Go
+		2: "🌐", // Веб-программирование
+		3: "🚀", // Продвинутое программирование
+	}
+
 	moduleIndex := 0
 	for _, guide := range guides {
 		log.Printf("📚 Руководство: %s", guide.Title)
+
+		// Создаём курс для руководства
+		icon := courseIcons[guide.Order]
+		if icon == "" {
+			icon = "📚"
+		}
+		course := &content.Course{
+			Slug:        m.slugify(guide.Title),
+			Title:       guide.Title,
+			Description: "",
+			Icon:        icon,
+			OrderIndex:  guide.Order,
+		}
+
+		if err := m.repo.CreateCourse(course); err != nil {
+			log.Printf("  ⚠️ Ошибка создания курса: %v", err)
+			continue
+		}
+		log.Printf("  📚 Курс: %s (ID=%d)", course.Title, course.ID)
 
 		// Находим главы внутри руководства
 		chapters, err := m.findChapters(guide.Path)
@@ -52,6 +78,7 @@ func (m *MarkdownImporter) Import(ctx context.Context) error {
 		for _, chapter := range chapters {
 			// Создаём модуль для главы
 			module := &content.Module{
+				CourseID:   course.ID,
 				Slug:       m.slugify(chapter.Title),
 				Title:      chapter.Title,
 				OrderIndex: moduleIndex,
@@ -361,7 +388,7 @@ func (m *MarkdownImporter) detectSectionKind(title string) content.SectionKind {
 		return content.SectionExamples
 	case strings.Contains(title, "⚠️") || strings.Contains(lower, "ошибк"):
 		return content.SectionPitfalls
-	case strings.Contains(title, "📝") || strings.Contains(lower, "практика"):
+	case strings.Contains(title, "📝") || strings.Contains(title, "🏋️") || strings.Contains(lower, "практика") || strings.Contains(lower, "практические задания"):
 		return "practice"
 	default:
 		return content.SectionExtra
@@ -371,7 +398,7 @@ func (m *MarkdownImporter) detectSectionKind(title string) content.SectionKind {
 // cleanSectionTitle убирает эмодзи из заголовка секции.
 func (m *MarkdownImporter) cleanSectionTitle(title string) string {
 	// Убираем известные эмодзи
-	emojis := []string{"💡", "📋", "💻", "⚠️", "📝", "🔗", "📚"}
+	emojis := []string{"💡", "📋", "💻", "⚠️", "📝", "🔗", "📚", "🏋️", "📖"}
 	result := title
 	for _, emoji := range emojis {
 		result = strings.ReplaceAll(result, emoji, "")
@@ -390,15 +417,16 @@ type ParsedTask struct {
 	Points           int
 }
 
-// parseTasks парсит задания из секции "Практика".
+// parseTasks парсит задания из секции "Практические задания".
 func (m *MarkdownImporter) parseTasks(md string) []ParsedTask {
 	var tasks []ParsedTask
 
-	// Находим секцию "Практика" — ищем от ## Практика до следующего ## или конца
+	// Находим секцию "Практические задания" — ищем от ## 🏋️ Практические задания до следующего ## или конца
 	practiceStart := -1
 	lines := strings.Split(md, "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(line, "## ") && strings.Contains(strings.ToLower(line), "практика") {
+		// Поддерживаем оба варианта: старый "Практика" и новый "Практические задания"
+		if strings.HasPrefix(line, "## ") && (strings.Contains(line, "🏋️") || strings.Contains(strings.ToLower(line), "практические задания") || strings.Contains(strings.ToLower(line), "практика")) {
 			practiceStart = i + 1
 			break
 		}
@@ -444,14 +472,8 @@ func (m *MarkdownImporter) parseTasks(md string) []ParsedTask {
 		title := strings.TrimPrefix(titleLine, "### ")
 		title = strings.TrimSpace(title)
 
-		// Ищем решение в <details>
-		solutionRe := regexp.MustCompile("(?s)<details>.*?```go\n(.+?)```.*?</details>")
-		solutionMatch := solutionRe.FindStringSubmatch(taskContent)
-
-		var solutionCode string
-		if len(solutionMatch) >= 2 {
-			solutionCode = strings.TrimSpace(solutionMatch[1])
-		}
+		// Ищем начальный код: **Начальный код:** + блок кода
+		starterCode := m.extractStarterCode(taskContent)
 
 		// Ищем ожидаемый вывод: **Ожидаемый вывод:** или > Вывод:
 		expectedOutput := m.extractExpectedOutput(taskContent)
@@ -459,30 +481,31 @@ func (m *MarkdownImporter) parseTasks(md string) []ParsedTask {
 		// Ищем требуемые паттерны: **Используйте:** или **Должно быть:**
 		requiredPatterns := m.extractRequiredPatterns(taskContent)
 
-		// Убираем <details> из prompt
-		promptRe := regexp.MustCompile("(?s)<details>.*?</details>")
-		prompt := promptRe.ReplaceAllString(taskContent, "")
-		prompt = strings.TrimPrefix(prompt, "### "+title)
-		prompt = strings.TrimSpace(prompt)
+		// Ищем баллы: **Баллы:** число
+		points := m.extractPoints(taskContent, idx)
 
-		// Генерируем starter code
-		starterCode := m.generateStarterCode(solutionCode)
-
-		// Генерируем тесты (если есть решение, вычисляем ожидаемый вывод)
-		tests := ""
-		if expectedOutput == "" && solutionCode != "" {
-			// Пытаемся получить ожидаемый вывод из решения
-			expectedOutput = m.computeExpectedOutput(solutionCode)
+		// Ищем решение в <details> (если начальный код не найден)
+		if starterCode == "" {
+			solutionRe := regexp.MustCompile("(?s)<details>.*?```go\n(.+?)```.*?</details>")
+			solutionMatch := solutionRe.FindStringSubmatch(taskContent)
+			if len(solutionMatch) >= 2 {
+				starterCode = m.generateStarterCode(strings.TrimSpace(solutionMatch[1]))
+			}
 		}
 
-		// Очки за задание
-		points := 10 + (idx * 5)
+		// Если всё ещё нет — генерируем базовый
+		if starterCode == "" {
+			starterCode = m.generateStarterCode("")
+		}
+
+		// Формируем описание задания (убираем код и детали)
+		prompt := m.extractPrompt(taskContent, title)
 
 		tasks = append(tasks, ParsedTask{
 			Title:            title,
 			Prompt:           prompt,
 			StarterCode:      starterCode,
-			Tests:            tests,
+			Tests:            "",
 			ExpectedOutput:   expectedOutput,
 			RequiredPatterns: requiredPatterns,
 			Points:           points,
@@ -549,6 +572,71 @@ func main() {
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// extractStarterCode извлекает начальный код из текста задания.
+func (m *MarkdownImporter) extractStarterCode(taskContent string) string {
+	// Ищем паттерн: **Начальный код:** + блок кода
+	patterns := []string{
+		`(?s)\*\*Начальный код[:\*]*\*\*\s*\n\s*` + "```go\n(.+?)```",
+		`(?s)\*\*Начальный код[:\*]*\*\*\s*\n\s*` + "```\n(.+?)```",
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if match := re.FindStringSubmatch(taskContent); len(match) >= 2 {
+			return strings.TrimSpace(match[1])
+		}
+	}
+
+	return ""
+}
+
+// extractPoints извлекает баллы из текста задания.
+func (m *MarkdownImporter) extractPoints(taskContent string, idx int) int {
+	// Ищем паттерн: **Баллы:** число
+	re := regexp.MustCompile(`\*\*Баллы[:\*]*\*\*\s*(\d+)`)
+	if match := re.FindStringSubmatch(taskContent); len(match) >= 2 {
+		if points, err := strconv.Atoi(match[1]); err == nil {
+			return points
+		}
+	}
+	// По умолчанию: 10 + (idx * 5)
+	return 10 + (idx * 5)
+}
+
+// extractPrompt извлекает описание задания, убирая код и служебные блоки.
+func (m *MarkdownImporter) extractPrompt(taskContent, title string) string {
+	prompt := taskContent
+
+	// Убираем заголовок
+	prompt = strings.TrimPrefix(prompt, "### "+title)
+
+	// Убираем блоки кода (начальный код, ожидаемый вывод)
+	codeBlockRe := regexp.MustCompile("(?s)```[^`]*```")
+	prompt = codeBlockRe.ReplaceAllString(prompt, "")
+
+	// Убираем <details>
+	detailsRe := regexp.MustCompile("(?s)<details>.*?</details>")
+	prompt = detailsRe.ReplaceAllString(prompt, "")
+
+	// Убираем служебные строки
+	linesToRemove := []string{
+		`\*\*Начальный код[:\*]*\*\*`,
+		`\*\*Ожидаемый вывод[:\*]*\*\*`,
+		`\*\*Баллы[:\*]*\*\*\s*\d+`,
+	}
+	for _, pattern := range linesToRemove {
+		re := regexp.MustCompile(pattern)
+		prompt = re.ReplaceAllString(prompt, "")
+	}
+
+	// Убираем пустые строки подряд
+	for strings.Contains(prompt, "\n\n\n") {
+		prompt = strings.ReplaceAll(prompt, "\n\n\n", "\n\n")
+	}
+
+	return strings.TrimSpace(prompt)
 }
 
 // extractExpectedOutput извлекает ожидаемый вывод из текста задания.

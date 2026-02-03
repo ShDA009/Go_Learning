@@ -1,0 +1,645 @@
+# Возвращение результата из функции
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+- Функции могут **возвращать значения** через оператор `return`
+- Тип возвращаемого значения указывается **после параметров**
+- Go поддерживает **множественный возврат** (несколько значений)
+- **Именованные возвращаемые значения** — объявляются как переменные
+- Идиома Go: возврат `(result, error)` для обработки ошибок
+
+### Сравнение способов возврата
+
+| Способ | Пример | Использование |
+|--------|--------|---------------|
+| Одно значение | `func f() int` | Простые вычисления |
+| Несколько значений | `func f() (int, error)` | Результат + ошибка |
+| Именованный возврат | `func f() (result int)` | Самодокументирующийся код |
+</Overview>
+
+<Theory>
+### Зачем функции возвращают значения?
+
+Функция без возврата — это **процедура**: она делает что-то (печатает, записывает), но не даёт результат.
+
+Функция с возвратом — это **вычисление**: она принимает входные данные и производит результат.
+
+```go
+// Процедура — ничего не возвращает
+func printHello() {
+    fmt.Println("Hello")
+}
+
+// Функция — возвращает результат
+func add(a, b int) int {
+    return a + b
+}
+
+result := add(2, 3)  // result = 5
+```
+
+### Множественный возврат — фишка Go
+
+В большинстве языков функция возвращает одно значение. В Go — сколько угодно:
+
+```go
+func divide(a, b int) (int, int) {
+    return a / b, a % b  // частное и остаток
+}
+
+quotient, remainder := divide(10, 3)
+// quotient = 3, remainder = 1
+```
+
+### Идиома (result, error)
+
+Самое частое использование множественного возврата — **возврат ошибки**:
+
+```go
+func readFile(name string) ([]byte, error) {
+    // если успех — возвращаем данные и nil
+    // если ошибка — возвращаем nil и ошибку
+}
+
+data, err := readFile("config.json")
+if err != nil {
+    log.Fatal(err)  // обрабатываем ошибку
+}
+// используем data
+```
+
+Это **идиоматический способ** обработки ошибок в Go. Никаких исключений!
+
+### Игнорирование возвращаемых значений
+
+Если какое-то значение не нужно, используйте `_`:
+
+```go
+// Не нужен остаток
+quotient, _ := divide(10, 3)
+
+// Не нужен результат, только ошибка
+_, err := readFile("config.json")
+```
+
+### Именованные возвращаемые значения
+
+Можно дать имена возвращаемым значениям:
+
+```go
+func rectangle(width, height int) (area, perimeter int) {
+    area = width * height
+    perimeter = 2 * (width + height)
+    return  // "голый" return — возвращает area и perimeter
+}
+```
+
+**Преимущества:**
+- Документация прямо в сигнатуре
+- Автоматическая инициализация нулевыми значениями
+
+**Недостатки:**
+- "Голый" return может запутать в длинных функциях
+- Легко случайно вернуть неинициализированное значение
+
+**Рекомендация:** Используйте именованные значения для коротких функций или когда названия добавляют ясности.
+
+### Ранний возврат (Early Return)
+
+Вместо глубокой вложенности используйте ранний выход:
+
+```go
+// ❌ Глубокая вложенность
+func process(data []byte) error {
+    if data != nil {
+        if len(data) > 0 {
+            // много кода
+        }
+    }
+    return nil
+}
+
+// ✅ Ранний возврат
+func process(data []byte) error {
+    if data == nil {
+        return errors.New("data is nil")
+    }
+    if len(data) == 0 {
+        return errors.New("data is empty")
+    }
+    // основной код без вложенности
+    return nil
+}
+```
+</Theory>
+
+<Syntax>
+### Одно возвращаемое значение
+```go
+func имя() тип {
+    return значение
+}
+```
+
+### Несколько возвращаемых значений
+```go
+func имя() (тип1, тип2) {
+    return значение1, значение2
+}
+```
+
+### Именованные возвращаемые значения
+```go
+func имя() (результат тип) {
+    результат = значение
+    return  // "голый" return
+}
+```
+
+### Множественный возврат с именами
+```go
+func имя() (a тип1, b тип2) {
+    a = ...
+    b = ...
+    return
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Одно возвращаемое значение
+```go
+package main
+
+import "fmt"
+
+func add(a, b int) int {
+    return a + b
+}
+
+func multiply(a, b int) int {
+    result := a * b
+    return result
+}
+
+func main() {
+    sum := add(5, 3)
+    fmt.Println("5 + 3 =", sum)  // 8
+    
+    product := multiply(4, 6)
+    fmt.Println("4 * 6 =", product)  // 24
+    
+    // Можно использовать напрямую
+    fmt.Println("10 + 20 =", add(10, 20))
+}
+```
+
+### Пример 2: Множественный возврат
+```go
+package main
+
+import "fmt"
+
+func divmod(a, b int) (int, int) {
+    quotient := a / b
+    remainder := a % b
+    return quotient, remainder
+}
+
+func minmax(numbers []int) (int, int) {
+    if len(numbers) == 0 {
+        return 0, 0
+    }
+    min, max := numbers[0], numbers[0]
+    for _, n := range numbers[1:] {
+        if n < min {
+            min = n
+        }
+        if n > max {
+            max = n
+        }
+    }
+    return min, max
+}
+
+func main() {
+    q, r := divmod(17, 5)
+    fmt.Printf("17 / 5 = %d, остаток %d\n", q, r)
+    
+    nums := []int{3, 1, 4, 1, 5, 9, 2, 6}
+    min, max := minmax(nums)
+    fmt.Printf("Min: %d, Max: %d\n", min, max)
+}
+```
+
+### Пример 3: Именованные возвращаемые значения
+```go
+package main
+
+import "fmt"
+
+// Явные имена возвращаемых значений
+func rectangle(width, height float64) (area, perimeter float64) {
+    area = width * height
+    perimeter = 2 * (width + height)
+    return  // "голый" return — возвращает area и perimeter
+}
+
+func split(sum int) (x, y int) {
+    x = sum * 4 / 9
+    y = sum - x
+    return
+}
+
+func main() {
+    a, p := rectangle(5.0, 3.0)
+    fmt.Printf("Площадь: %.2f, Периметр: %.2f\n", a, p)
+    
+    x, y := split(17)
+    fmt.Printf("x: %d, y: %d\n", x, y)
+}
+```
+
+### Пример 4: Идиома (result, error)
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+func divide(a, b float64) (float64, error) {
+    if b == 0 {
+        return 0, errors.New("деление на ноль")
+    }
+    return a / b, nil
+}
+
+func sqrt(x float64) (float64, error) {
+    if x < 0 {
+        return 0, errors.New("отрицательное число")
+    }
+    // Простая аппроксимация
+    result := x
+    for i := 0; i < 10; i++ {
+        result = (result + x/result) / 2
+    }
+    return result, nil
+}
+
+func main() {
+    // Успешный вызов
+    result, err := divide(10, 3)
+    if err != nil {
+        fmt.Println("Ошибка:", err)
+    } else {
+        fmt.Printf("10 / 3 = %.4f\n", result)
+    }
+    
+    // Ошибка
+    result, err = divide(5, 0)
+    if err != nil {
+        fmt.Println("Ошибка:", err)
+    }
+    
+    // Квадратный корень
+    s, err := sqrt(16)
+    if err == nil {
+        fmt.Printf("√16 = %.4f\n", s)
+    }
+}
+```
+
+### Пример 5: Игнорирование возвращаемых значений
+```go
+package main
+
+import "fmt"
+
+func fullInfo(name string, age int) (string, int, bool) {
+    isAdult := age >= 18
+    return name, age, isAdult
+}
+
+func main() {
+    // Получаем все значения
+    name, age, adult := fullInfo("Алиса", 25)
+    fmt.Println(name, age, adult)
+    
+    // Игнорируем ненужные через _
+    _, _, isAdult := fullInfo("Боб", 15)
+    fmt.Println("Совершеннолетний:", isAdult)
+    
+    // Можно игнорировать все
+    fullInfo("Виктор", 30)  // результат не используется (warning)
+}
+```
+
+### Пример 6: Ранний возврат (guard clauses)
+```go
+package main
+
+import "fmt"
+
+func processAge(age int) string {
+    // Ранние возвраты для особых случаев
+    if age < 0 {
+        return "Некорректный возраст"
+    }
+    if age < 13 {
+        return "Ребёнок"
+    }
+    if age < 20 {
+        return "Подросток"
+    }
+    if age < 60 {
+        return "Взрослый"
+    }
+    return "Пожилой"
+}
+
+func findIndex(slice []int, target int) int {
+    for i, v := range slice {
+        if v == target {
+            return i  // ранний возврат при нахождении
+        }
+    }
+    return -1  // не найден
+}
+
+func main() {
+    fmt.Println(processAge(8))   // Ребёнок
+    fmt.Println(processAge(25))  // Взрослый
+    
+    nums := []int{10, 20, 30, 40, 50}
+    fmt.Println(findIndex(nums, 30))  // 2
+    fmt.Println(findIndex(nums, 99))  // -1
+}
+```
+
+### Пример 7: Возврат функции
+```go
+package main
+
+import "fmt"
+
+func getCalculator(operation string) func(int, int) int {
+    switch operation {
+    case "+":
+        return func(a, b int) int { return a + b }
+    case "-":
+        return func(a, b int) int { return a - b }
+    case "*":
+        return func(a, b int) int { return a * b }
+    default:
+        return func(a, b int) int { return 0 }
+    }
+}
+
+func main() {
+    add := getCalculator("+")
+    sub := getCalculator("-")
+    mul := getCalculator("*")
+    
+    fmt.Println("10 + 5 =", add(10, 5))
+    fmt.Println("10 - 5 =", sub(10, 5))
+    fmt.Println("10 * 5 =", mul(10, 5))
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли return
+```go
+// ❌ Неправильно — функция ничего не возвращает
+func add(a, b int) int {
+    result := a + b
+    // return забыли!
+}  // missing return
+
+// ✅ Правильно
+func add(a, b int) int {
+    return a + b
+}
+```
+
+### 2. Неверное количество возвращаемых значений
+```go
+// ❌ Неправильно
+func pair() (int, int) {
+    return 1  // not enough return values
+}
+
+func single() int {
+    return 1, 2  // too many return values
+}
+
+// ✅ Правильно
+func pair() (int, int) {
+    return 1, 2
+}
+```
+
+### 3. Игнорирование ошибки
+```go
+// ❌ Плохо — игнорируем ошибку
+result, _ := divide(10, 0)  // ошибка потеряна!
+fmt.Println(result)
+
+// ✅ Правильно — всегда обрабатывайте ошибки
+result, err := divide(10, 0)
+if err != nil {
+    fmt.Println("Ошибка:", err)
+    return
+}
+fmt.Println(result)
+```
+
+### 4. Путаница с именованными возвращаемыми значениями
+```go
+// ❌ Неправильно — создаём новую переменную вместо присвоения
+func calculate() (result int) {
+    result := 42  // создаёт НОВУЮ локальную переменную!
+    return        // возвращает 0, а не 42
+}
+
+// ✅ Правильно — используем присвоение
+func calculate() (result int) {
+    result = 42  // присваиваем именованной переменной
+    return       // возвращает 42
+}
+```
+
+### 5. Неиспользованное возвращаемое значение
+```go
+// ⚠️ Предупреждение — результат не используется
+func getValue() int { return 42 }
+
+func main() {
+    getValue()  // результат теряется
+}
+
+// ✅ Правильно
+func main() {
+    value := getValue()
+    fmt.Println(value)
+    // или
+    _ = getValue()  // явное игнорирование
+}
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Возврат одного значения</Title>
+<Prompt>
+Создайте функцию `square(x int)`, которая возвращает квадрат числа.
+</Prompt>
+<Hints>
+- Синтаксис: `func square(x int) int { return x * x }`
+- Тип возвращаемого значения указывается после параметров
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию square
+
+func main() {
+    // Выведите результаты
+}
+```
+</StarterCode>
+<ExpectedOutput>
+square(5) = 25
+square(7) = 49
+square(12) = 144
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Возврат нескольких значений</Title>
+<Prompt>
+Создайте функцию `divmod(a, b int)`, которая возвращает частное и остаток от деления.
+</Prompt>
+<Hints>
+- Возврат: `return a/b, a%b`
+- Приём: `q, r := divmod(17, 5)`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию divmod
+
+func main() {
+    // Вызовите и выведите результаты
+}
+```
+</StarterCode>
+<ExpectedOutput>
+divmod(17, 5):
+  Частное: 3
+  Остаток: 2
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Именованные возвращаемые значения</Title>
+<Prompt>
+Создайте функцию `rectStats(w, h int)` с именованными возвращаемыми значениями `area` и `perimeter`.
+</Prompt>
+<Hints>
+- Синтаксис: `func f() (area int, perimeter int) { ... return }`
+- Именованные переменные инициализируются нулями
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию rectStats с именованными возвратами
+
+func main() {
+    // Вызовите для прямоугольника 5x3
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Прямоугольник 5x3:
+  Площадь: 15
+  Периметр: 16
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Возврат ошибки</Title>
+<Prompt>
+Создайте функцию `safeDivide(a, b int)`, которая возвращает результат и ошибку при делении на ноль.
+</Prompt>
+<Hints>
+- `errors.New("текст")` создаёт ошибку
+- `nil` означает отсутствие ошибки
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// Создайте функцию safeDivide
+
+func main() {
+    // Проверьте оба случая
+}
+```
+</StarterCode>
+<ExpectedOutput>
+safeDivide(10, 2) = 5, err = <nil>
+safeDivide(10, 0) = 0, err = деление на ноль
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Игнорирование возвращаемых значений</Title>
+<Prompt>
+Покажите использование `_` для игнорирования ненужных возвращаемых значений.
+</Prompt>
+<Hints>
+- `q, _ := divmod(17, 5)` — игнорируем остаток
+- `_, r := divmod(17, 5)` — игнорируем частное
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func divmod(a, b int) (int, int) {
+    return a / b, a % b
+}
+
+func main() {
+    // Покажите разные способы приёма значений
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Полный результат: частное=3, остаток=2
+Только частное: 3
+Только остаток: 2
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,611 @@
+# Подключение к БД и получение данных
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **database/sql** — универсальный интерфейс для баз данных
+2. **Driver** — драйвер конкретной СУБД (MySQL, PostgreSQL и т.д.)
+3. **sql.Open** — создание пула соединений
+4. **db.Query** — выполнение SELECT запросов
+5. **rows.Scan** — извлечение данных в переменные
+</Overview>
+
+<Theory>
+### Архитектура database/sql
+
+```
+Ваш код → database/sql → Driver → БД
+```
+
+`database/sql` — универсальный интерфейс, драйвер — конкретная реализация.
+
+### Подключение к MySQL в веб-приложении
+
+```go
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+var db *sql.DB  // глобальная переменная для пула
+
+func main() {
+    var err error
+    db, err = sql.Open("mysql", 
+        "user:password@tcp(localhost:3306)/mydb?charset=utf8mb4&parseTime=true")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Проверка соединения
+    if err = db.Ping(); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Настройка пула
+    db.SetMaxOpenConns(25)
+    db.SetMaxIdleConns(5)
+    
+    http.HandleFunc("/users", usersHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Чтение данных для веб-страницы
+
+```go
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+func usersHandler(w http.ResponseWriter, r *http.Request) {
+    rows, err := db.Query("SELECT id, name, email FROM users")
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    defer rows.Close()
+    
+    var users []User
+    for rows.Next() {
+        var u User
+        rows.Scan(&u.ID, &u.Name, &u.Email)
+        users = append(users, u)
+    }
+    
+    tmpl.Execute(w, users)
+}
+```
+
+### Один пользователь по ID
+
+```go
+func userHandler(w http.ResponseWriter, r *http.Request) {
+    id := r.URL.Query().Get("id")
+    
+    var user User
+    err := db.QueryRow(
+        "SELECT id, name, email FROM users WHERE id = ?", id,
+    ).Scan(&user.ID, &user.Name, &user.Email)
+    
+    if err == sql.ErrNoRows {
+        http.NotFound(w, r)
+        return
+    }
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    tmpl.Execute(w, user)
+}
+```
+
+### Настройка пула соединений
+
+```go
+db.SetMaxOpenConns(25)                  // макс. открытых
+db.SetMaxIdleConns(5)                   // макс. простаивающих
+db.SetConnMaxLifetime(5 * time.Minute)  // время жизни
+```
+
+### Безопасность: плейсхолдеры
+
+```go
+// ОПАСНО — SQL инъекция!
+db.Query("SELECT * FROM users WHERE name = '" + name + "'")
+
+// БЕЗОПАСНО
+db.Query("SELECT * FROM users WHERE name = ?", name)
+```
+</Theory>
+
+<Syntax>
+### Подключение
+
+```go
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+db, err := sql.Open("mysql", "user:password@tcp(host:port)/dbname")
+defer db.Close()
+```
+
+### Получение данных
+
+```go
+rows, err := db.Query("SELECT id, name FROM users")
+defer rows.Close()
+
+for rows.Next() {
+    var id int
+    var name string
+    rows.Scan(&id, &name)
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Настройка MySQL
+
+```sql
+-- Создание базы данных
+CREATE DATABASE productdb;
+USE productdb;
+
+-- Создание таблицы
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price INT NOT NULL
+);
+
+-- Тестовые данные
+INSERT INTO products (name, price) VALUES
+    ('iPhone', 999),
+    ('MacBook', 1999),
+    ('iPad', 799);
+```
+
+### Базовое подключение и получение данных
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "html/template"
+    "net/http"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price int
+}
+
+var database *sql.DB
+
+func main() {
+    var err error
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    // Проверка соединения
+    if err = database.Ping(); err != nil {
+        panic(err)
+    }
+    
+    http.HandleFunc("/", indexHandler)
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+    rows, err := database.Query("SELECT id, name, price FROM products")
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    defer rows.Close()
+    
+    var products []Product
+    for rows.Next() {
+        var p Product
+        err := rows.Scan(&p.ID, &p.Name, &p.Price)
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        products = append(products, p)
+    }
+    
+    tmpl := template.Must(template.ParseFiles("templates/index.html"))
+    tmpl.Execute(w, products)
+}
+```
+
+### HTML шаблон для списка
+
+**templates/index.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; max-width: 600px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Products</h1>
+    
+    {{ if . }}
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Price</th>
+        </tr>
+        {{ range . }}
+        <tr>
+            <td>{{ .ID }}</td>
+            <td>{{ .Name }}</td>
+            <td>${{ .Price }}</td>
+        </tr>
+        {{ end }}
+    </table>
+    {{ else }}
+    <p>No products found</p>
+    {{ end }}
+</body>
+</html>
+```
+
+### Получение одной записи (QueryRow)
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "html/template"
+    "net/http"
+    
+    "github.com/gorilla/mux"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price int
+}
+
+var database *sql.DB
+
+func main() {
+    var err error
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    router := mux.NewRouter()
+    router.HandleFunc("/product/{id:[0-9]+}", productHandler)
+    
+    http.ListenAndServe(":8080", router)
+}
+
+func productHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    var p Product
+    err := database.QueryRow("SELECT id, name, price FROM products WHERE id = ?", id).
+        Scan(&p.ID, &p.Name, &p.Price)
+    
+    if err == sql.ErrNoRows {
+        http.NotFound(w, r)
+        return
+    }
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    tmpl := template.Must(template.New("product").Parse(`
+<!DOCTYPE html>
+<html>
+<body>
+    <h1>{{ .Name }}</h1>
+    <p>ID: {{ .ID }}</p>
+    <p>Price: ${{ .Price }}</p>
+    <a href="/">Back to list</a>
+</body>
+</html>
+    `))
+    
+    tmpl.Execute(w, p)
+}
+```
+
+### Поиск по параметрам
+
+```go
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+    query := r.URL.Query().Get("q")
+    
+    // Используем LIKE для поиска
+    rows, err := database.Query(
+        "SELECT id, name, price FROM products WHERE name LIKE ?",
+        "%"+query+"%",
+    )
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    defer rows.Close()
+    
+    var products []Product
+    for rows.Next() {
+        var p Product
+        rows.Scan(&p.ID, &p.Name, &p.Price)
+        products = append(products, p)
+    }
+    
+    tmpl := template.Must(template.ParseFiles("templates/search.html"))
+    tmpl.Execute(w, map[string]interface{}{
+        "Query":    query,
+        "Products": products,
+    })
+}
+```
+
+### Полный пример с навигацией
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "html/template"
+    "net/http"
+    
+    "github.com/gorilla/mux"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price int
+}
+
+var (
+    database  *sql.DB
+    templates *template.Template
+)
+
+func main() {
+    var err error
+    
+    // Подключение к БД
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    // Загрузка шаблонов
+    templates = template.Must(template.ParseGlob("templates/*.html"))
+    
+    // Роутинг
+    router := mux.NewRouter()
+    router.HandleFunc("/", listHandler).Methods("GET")
+    router.HandleFunc("/product/{id:[0-9]+}", viewHandler).Methods("GET")
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", router)
+}
+
+func listHandler(w http.ResponseWriter, r *http.Request) {
+    rows, err := database.Query("SELECT id, name, price FROM products ORDER BY name")
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    defer rows.Close()
+    
+    var products []Product
+    for rows.Next() {
+        var p Product
+        rows.Scan(&p.ID, &p.Name, &p.Price)
+        products = append(products, p)
+    }
+    
+    templates.ExecuteTemplate(w, "list.html", products)
+}
+
+func viewHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    var p Product
+    err := database.QueryRow("SELECT id, name, price FROM products WHERE id = ?", id).
+        Scan(&p.ID, &p.Name, &p.Price)
+    
+    if err == sql.ErrNoRows {
+        http.NotFound(w, r)
+        return
+    }
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    templates.ExecuteTemplate(w, "view.html", p)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Не закрывают rows
+
+```go
+// ❌ Утечка соединений
+rows, _ := db.Query("SELECT ...")
+for rows.Next() { ... }
+
+// ✅ Используйте defer
+rows, err := db.Query("SELECT ...")
+defer rows.Close()
+```
+
+### 2. SQL инъекции
+
+```go
+// ❌ Уязвимо к SQL injection
+query := "SELECT * FROM users WHERE id = " + id
+db.Query(query)
+
+// ✅ Используйте плейсхолдеры
+db.Query("SELECT * FROM users WHERE id = ?", id)
+```
+
+### 3. Неправильный порядок Scan
+
+```go
+// ❌ Порядок должен соответствовать SELECT
+rows.Scan(&name, &id)  // SELECT id, name
+
+// ✅ Тот же порядок
+rows.Scan(&id, &name)  // SELECT id, name
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: Prometheus metrics</Title>
+<Prompt>
+Добавьте метрики.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Metrics: promhttp.Handler() на /metrics")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Metrics: promhttp.Handler() на /metrics
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Counter метрика</Title>
+<Prompt>
+Создайте счётчик.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Counter: promauto.NewCounter(prometheus.CounterOpts{...})")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Counter: promauto.NewCounter(prometheus.CounterOpts{...})
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Histogram метрика</Title>
+<Prompt>
+Измеряйте время запросов.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Histogram: promauto.NewHistogram для latency")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Histogram: promauto.NewHistogram для latency
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Labels</Title>
+<Prompt>
+Добавьте labels к метрикам.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Labels: counter.WithLabelValues(\"method\", \"path\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Labels: counter.WithLabelValues("method", "path")
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: Grafana dashboard</Title>
+<Prompt>
+Визуализируйте метрики.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Grafana: dashboards для request rate, latency, errors")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Grafana: dashboards для request rate, latency, errors
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,216 @@
+# Production-ready HTTP сервер
+
+<Meta>
+reading_time: 11
+</Meta>
+
+<Overview>
+1. Любой прод‑HTTP сервер в Go должен иметь **таймауты** (иначе slowloris/зависания)
+2. Нужен **graceful shutdown** (SIGTERM) и корректное закрытие фоновых задач/соединений
+3. Добавьте **health endpoints**: `/healthz` (liveness) и `/readyz` (readiness)
+4. Важны **лимиты**: размер тела, количество соединений, время на заголовки
+5. Весь сервис — про эксплуатацию: конфиг, логирование, метрики, трейсинг
+</Overview>
+
+<Theory>
+### Почему таймауты обязательны
+
+Без таймаутов:
+- клиент может “подвесить” соединение, отправляя заголовки очень медленно
+- запросы могут висеть бесконечно из‑за внешних зависимостей
+- пул соединений забивается и сервис деградирует
+
+Минимум, что нужно на сервере:
+- `ReadHeaderTimeout` (защита от slowloris)
+- `ReadTimeout`/`WriteTimeout` (в зависимости от типа API)
+- `IdleTimeout` (keep-alive)
+
+### Liveness vs Readiness
+
+- **/healthz**: процесс жив? (обычно всегда 200, пока не “умираем”)
+- **/readyz**: готовы обслуживать? (например, есть подключение к БД/очереди)
+
+В Kubernetes readiness влияет на то, отправляют ли на pod трафик.
+
+### Shutdown стратегия
+
+При SIGTERM:
+- прекращаем принимать новые соединения
+- даём завершить текущие запросы (с таймаутом)
+- останавливаем фоновые воркеры
+- закрываем ресурсы (DB, tracer provider, etc.)
+</Theory>
+
+<Syntax>
+### Базовый http.Server с таймаутами
+
+```go
+srv := &http.Server{
+	Addr:              ":8080",
+	Handler:           handler,
+	ReadHeaderTimeout: 5 * time.Second,
+	ReadTimeout:       15 * time.Second,
+	WriteTimeout:      15 * time.Second,
+	IdleTimeout:       60 * time.Second,
+}
+```
+
+### Graceful shutdown (SIGINT/SIGTERM)
+
+```go
+ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+defer stop()
+
+go srv.ListenAndServe()
+<-ctx.Done()
+
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+_ = srv.Shutdown(shutdownCtx)
+```
+
+### Лимит размера тела запроса
+
+```go
+r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+```
+</Syntax>
+
+<Examples>
+### Пример: каркас прод‑сервера (подходит и для Gin)
+
+Gin работает поверх `net/http`, поэтому таймауты и shutdown настраиваются так же.
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		// TODO: проверка зависимостей (БД/очередь)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ready"))
+	})
+
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Println("server started on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Println("server error:", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutdownCtx)
+	log.Println("bye")
+}
+```
+</Examples>
+
+<Pitfalls>
+1. **Нет ReadHeaderTimeout**: уязвимость к slowloris
+2. **Бесконечные внешние вызовы**: без `context.WithTimeout` ваши handler’ы будут висеть
+3. **Shutdown без таймаута**: можно зависнуть на остановке
+4. **/readyz всегда 200**: readiness должен отражать реальную готовность
+5. **pprof на основном порту**: держите debug endpoints отдельно и ограничивайте доступ
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/net/http#Server`
+- `https://pkg.go.dev/os/signal`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Таймауты сервера</Title>
+<Prompt>
+Добавьте таймауты `ReadHeaderTimeout/ReadTimeout/WriteTimeout/IdleTimeout` в capstone REST проект (Gin). Обоснуйте выбранные значения.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("http timeouts: configured + rationale")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+http timeouts: configured + rationale
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: /healthz и /readyz</Title>
+<Prompt>
+Добавьте endpoints `/healthz` и `/readyz`. `/readyz` должен учитывать состояние БД (и/или других зависимостей) и возвращать 503, если сервис не готов.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("healthz/readyz: implemented")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+healthz/readyz: implemented
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Graceful shutdown</Title>
+<Prompt>
+Реализуйте корректный shutdown (SIGTERM) так, чтобы:
+1) новые запросы не принимались, 2) текущие завершались в пределах таймаута, 3) ресурсы закрывались (DB/otel).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("graceful shutdown: done")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+graceful shutdown: done
+</ExpectedOutput>
+</Task>
+

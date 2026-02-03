@@ -1,0 +1,584 @@
+# Функции и их параметры
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+- **Функция** — именованный блок кода, выполняющий определённую задачу
+- Функции позволяют **переиспользовать код** и структурировать программу
+- **Параметры** — входные данные функции, **аргументы** — значения при вызове
+- Аргументы передаются **по значению** (создаётся копия)
+- `...` — вариативные параметры (неопределённое количество аргументов)
+
+### Анатомия функции
+
+```go
+func имяФункции(параметр1 тип1, параметр2 тип2) типРезультата {
+    // тело функции
+    return результат
+}
+```
+
+| Элемент | Описание |
+|---------|----------|
+| `func` | Ключевое слово |
+| `имяФункции` | Идентификатор (camelCase) |
+| `параметры` | Входные данные |
+| `типРезультата` | Что возвращает функция |
+| `return` | Оператор возврата |
+</Overview>
+
+<Theory>
+### Зачем нужны функции?
+
+Без функций код — это одна длинная простыня. Функции позволяют:
+
+1. **Переиспользовать код** — написать один раз, вызывать много раз
+2. **Структурировать программу** — разбить на логические блоки
+3. **Тестировать** — проверять отдельные части
+4. **Абстрагировать** — скрыть детали реализации
+
+### Параметры vs Аргументы
+
+Эти термины часто путают:
+
+**Параметры** — переменные в определении функции:
+```go
+func greet(name string) {  // name — параметр
+    fmt.Println("Hello,", name)
+}
+```
+
+**Аргументы** — значения при вызове функции:
+```go
+greet("John")  // "John" — аргумент
+```
+
+### Передача по значению
+
+В Go **всё передаётся по значению** — функция получает **копию** аргумента:
+
+```go
+func double(x int) {
+    x = x * 2  // изменяем копию!
+}
+
+n := 5
+double(n)
+fmt.Println(n)  // 5 — не изменился!
+```
+
+Для изменения оригинала нужны указатели (следующая глава).
+
+### Параметры одного типа
+
+Если несколько параметров имеют один тип, тип можно указать один раз:
+
+```go
+// Длинная форма
+func add(x int, y int) int {
+    return x + y
+}
+
+// Короткая форма
+func add(x, y int) int {
+    return x + y
+}
+```
+
+### Вариативные параметры (...)
+
+Функция может принимать **неопределённое количество** аргументов:
+
+```go
+func sum(nums ...int) int {
+    total := 0
+    for _, n := range nums {
+        total += n
+    }
+    return total
+}
+
+sum(1, 2)           // 3
+sum(1, 2, 3, 4, 5)  // 15
+sum()               // 0
+```
+
+Внутри функции `nums` — это срез (`[]int`).
+
+**Важно:** Вариативный параметр должен быть **последним**:
+```go
+func f(prefix string, nums ...int)  // OK
+func f(nums ...int, suffix string)  // ОШИБКА!
+```
+
+### Передача среза в вариативную функцию
+
+Можно "развернуть" срез с помощью `...`:
+
+```go
+numbers := []int{1, 2, 3}
+sum(numbers...)  // то же, что sum(1, 2, 3)
+```
+
+### Функция main
+
+`main` — особая функция:
+- Точка входа в программу
+- Не принимает параметров
+- Не возвращает значения
+- Должна быть в пакете `main`
+
+```go
+func main() {
+    // программа начинается здесь
+}
+```
+</Theory>
+
+<Syntax>
+### Функция без параметров и результата
+```go
+func sayHello() {
+    fmt.Println("Hello!")
+}
+```
+
+### Функция с параметрами
+```go
+func greet(name string) {
+    fmt.Println("Hello,", name)
+}
+
+// Несколько параметров одного типа
+func add(x, y int) {
+    fmt.Println(x + y)
+}
+
+// Разные типы
+func info(name string, age int) {
+    fmt.Printf("%s is %d years old\n", name, age)
+}
+```
+
+### Вариативные параметры (varargs)
+```go
+func sum(numbers ...int) {
+    // numbers — это []int (срез)
+}
+```
+
+### Вызов функции
+```go
+sayHello()              // без аргументов
+greet("Alice")          // один аргумент
+add(5, 3)               // два аргумента
+sum(1, 2, 3, 4, 5)      // произвольное количество
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Простая функция
+```go
+package main
+
+import "fmt"
+
+func sayHello() {
+    fmt.Println("Привет, мир!")
+}
+
+func main() {
+    sayHello()  // вызов функции
+    sayHello()  // можно вызывать многократно
+    sayHello()
+}
+```
+
+### Пример 2: Функция с параметрами
+```go
+package main
+
+import "fmt"
+
+func greet(name string) {
+    fmt.Printf("Привет, %s!\n", name)
+}
+
+func showSum(a, b int) {
+    fmt.Printf("%d + %d = %d\n", a, b, a+b)
+}
+
+func main() {
+    greet("Анна")
+    greet("Борис")
+    
+    showSum(5, 3)
+    showSum(10, 20)
+}
+```
+
+### Пример 3: Параметры разных типов
+```go
+package main
+
+import "fmt"
+
+func printPerson(name string, age int, height float64) {
+    fmt.Printf("Имя: %s\n", name)
+    fmt.Printf("Возраст: %d\n", age)
+    fmt.Printf("Рост: %.2f м\n", height)
+}
+
+func main() {
+    printPerson("Иван", 25, 1.80)
+    fmt.Println("---")
+    printPerson("Мария", 30, 1.65)
+}
+```
+
+### Пример 4: Вариативные параметры
+```go
+package main
+
+import "fmt"
+
+func sum(numbers ...int) {
+    total := 0
+    for _, n := range numbers {
+        total += n
+    }
+    fmt.Printf("Сумма %v = %d\n", numbers, total)
+}
+
+func main() {
+    sum(1, 2)           // [1 2] = 3
+    sum(1, 2, 3, 4)     // [1 2 3 4] = 10
+    sum(10, 20, 30)     // [10 20 30] = 60
+    
+    // Передача среза через ...
+    nums := []int{5, 10, 15, 20}
+    sum(nums...)        // [5 10 15 20] = 50
+}
+```
+
+### Пример 5: Передача по значению (копирование)
+```go
+package main
+
+import "fmt"
+
+func double(x int) {
+    x = x * 2
+    fmt.Println("Внутри функции:", x)
+}
+
+func main() {
+    a := 10
+    fmt.Println("До вызова:", a)
+    
+    double(a)  // передаётся КОПИЯ значения
+    
+    fmt.Println("После вызова:", a)  // a не изменилось!
+}
+// Вывод:
+// До вызова: 10
+// Внутри функции: 20
+// После вызова: 10
+```
+
+### Пример 6: Комбинация обычных и вариативных параметров
+```go
+package main
+
+import "fmt"
+
+func printf(format string, args ...interface{}) {
+    fmt.Printf(format, args...)
+}
+
+func greetAll(greeting string, names ...string) {
+    for _, name := range names {
+        fmt.Printf("%s, %s!\n", greeting, name)
+    }
+}
+
+func main() {
+    greetAll("Привет", "Анна", "Борис", "Виктор")
+    fmt.Println()
+    greetAll("До свидания", "Мария")
+}
+```
+
+### Пример 7: Практический пример — статистика
+```go
+package main
+
+import "fmt"
+
+func printStats(numbers ...int) {
+    if len(numbers) == 0 {
+        fmt.Println("Нет данных")
+        return
+    }
+    
+    sum := 0
+    min := numbers[0]
+    max := numbers[0]
+    
+    for _, n := range numbers {
+        sum += n
+        if n < min {
+            min = n
+        }
+        if n > max {
+            max = n
+        }
+    }
+    
+    avg := float64(sum) / float64(len(numbers))
+    
+    fmt.Printf("Количество: %d\n", len(numbers))
+    fmt.Printf("Сумма: %d\n", sum)
+    fmt.Printf("Среднее: %.2f\n", avg)
+    fmt.Printf("Минимум: %d\n", min)
+    fmt.Printf("Максимум: %d\n", max)
+}
+
+func main() {
+    printStats(4, 8, 15, 16, 23, 42)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли вызвать функцию (нет скобок)
+```go
+// ❌ Неправильно — это ссылка на функцию, а не вызов
+func main() {
+    sayHello  // ничего не происходит!
+}
+
+// ✅ Правильно — скобки обязательны
+func main() {
+    sayHello()
+}
+```
+
+### 2. Неверное количество аргументов
+```go
+func add(a, b int) {
+    fmt.Println(a + b)
+}
+
+// ❌ Неправильно
+add(5)        // not enough arguments
+add(1, 2, 3)  // too many arguments
+
+// ✅ Правильно
+add(5, 3)
+```
+
+### 3. Несоответствие типов аргументов
+```go
+func greet(name string) {
+    fmt.Println("Hello", name)
+}
+
+// ❌ Неправильно
+greet(123)  // cannot use 123 (int) as string
+
+// ✅ Правильно
+greet("Alice")
+```
+
+### 4. Ожидание изменения переменной
+```go
+// ❌ Не работает — передаётся копия
+func increment(x int) {
+    x++  // меняется только локальная копия
+}
+
+func main() {
+    a := 5
+    increment(a)
+    fmt.Println(a)  // всё ещё 5!
+}
+
+// ✅ Используйте указатели или возврат значения
+func increment(x int) int {
+    return x + 1
+}
+
+func main() {
+    a := 5
+    a = increment(a)
+    fmt.Println(a)  // 6
+}
+```
+
+### 5. Путаница среза и вариативных параметров
+```go
+func sum(numbers ...int) int { /* ... */ }
+
+// ❌ Неправильно — передаём срез напрямую
+nums := []int{1, 2, 3}
+sum(nums)  // cannot use []int as int
+
+// ✅ Правильно — используем ...
+sum(nums...)
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Простая функция без параметров</Title>
+<Prompt>
+Создайте функцию `sayHello()`, которая выводит приветствие. Вызовите её из main.
+</Prompt>
+<Hints>
+- Синтаксис: `func sayHello() { ... }`
+- Функции объявляются вне других функций
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию sayHello
+
+func main() {
+    fmt.Println("Вызов функции sayHello:")
+    // Вызовите функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Вызов функции sayHello:
+Привет, мир!
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Функция с одним параметром</Title>
+<Prompt>
+Создайте функцию `greet(name string)`, которая приветствует человека по имени.
+</Prompt>
+<Hints>
+- Синтаксис: `func greet(name string) { ... }`
+- Параметр используется внутри функции
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию greet(name string)
+
+func main() {
+    fmt.Println("Приветствие пользователей:")
+    // Вызовите функцию 3 раза
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Приветствие пользователей:
+Привет, Alice!
+Привет, Bob!
+Привет, Charlie!
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Функция с несколькими параметрами</Title>
+<Prompt>
+Создайте функцию `printInfo(name string, age int, city string)` для вывода информации о человеке.
+</Prompt>
+<Hints>
+- Параметры одного типа можно группировать: `a, b string`
+- Или указывать тип для каждого
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию printInfo
+
+func main() {
+    fmt.Println("Информация о пользователе:")
+    // Вызовите функцию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Информация о пользователе:
+Имя: Alice, Возраст: 25, Город: Москва
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Variadic функция (...)</Title>
+<Prompt>
+Создайте функцию `sum(nums ...int)`, которая принимает произвольное количество чисел и выводит их сумму.
+</Prompt>
+<Hints>
+- `nums` внутри функции — это срез []int
+- Используйте range для перебора
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию sum(nums ...int)
+
+func main() {
+    fmt.Println("Суммы чисел:")
+    // Вызовите с разным количеством аргументов
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Суммы чисел:
+sum(1, 2) = 3
+sum(1, 2, 3, 4, 5) = 15
+sum() = 0
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Передача среза в variadic</Title>
+<Prompt>
+Покажите, как передать существующий срез в variadic функцию, используя оператор `...`.
+</Prompt>
+<Hints>
+- Синтаксис: `sum(slice...)`
+- `...` после среза "распаковывает" его
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Реализуйте решение
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Срез: [10 20 30 40]
+Сумма среза: 100
+Сумма чисел напрямую: 100
+</ExpectedOutput>
+</Task>

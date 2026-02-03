@@ -42,6 +42,67 @@ go get -u github.com/lib/pq
 
 ---
 
+## 📖 Теория
+
+### PostgreSQL vs MySQL
+
+PostgreSQL — более мощная СУБД с расширенными возможностями:
+- Полная поддержка SQL стандарта
+- Типы данных: JSON, массивы, UUID, геоданные
+- Наследование таблиц
+- Мощные индексы
+
+### Главное отличие: плейсхолдеры
+
+**MySQL:** `?`
+**PostgreSQL:** `$1, $2, $3...`
+
+```go
+// MySQL
+db.Query("SELECT * FROM users WHERE id = ? AND name = ?", 1, "John")
+
+// PostgreSQL
+db.Query("SELECT * FROM users WHERE id = $1 AND name = $2", 1, "John")
+```
+
+### RETURNING — получение данных после INSERT
+
+PostgreSQL не поддерживает `LastInsertId()`. Используйте `RETURNING`:
+
+```go
+var id int
+err := db.QueryRow(
+    "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
+    "John", "john@example.com",
+).Scan(&id)
+
+fmt.Println("New user ID:", id)
+```
+
+### Работа с массивами
+
+```go
+import "github.com/lib/pq"
+
+// Вставка массива
+tags := []string{"go", "programming"}
+db.Exec("INSERT INTO posts (tags) VALUES ($1)", pq.Array(tags))
+
+// Чтение массива
+var tags []string
+db.QueryRow("SELECT tags FROM posts WHERE id = $1", 1).Scan(pq.Array(&tags))
+```
+
+### SSL соединение
+
+```go
+"sslmode=disable"       // для разработки
+"sslmode=require"       // требовать SSL
+"sslmode=verify-full"   // проверять сертификат
+```
+
+---
+
 ## 💻 Примеры кода
 
 ### Подключение к PostgreSQL
@@ -589,28 +650,145 @@ db.QueryRow("INSERT INTO products ... RETURNING id").Scan(&id)
 
 ---
 
-## 📝 Практика
+## 🏋️ Практические задания
 
-### Задача 1: Product CRUD
-Полный CRUD с использованием RETURNING.
+### Задание 1: bcrypt хеширование
 
-### Задача 2: Full-text search
-Полнотекстовый поиск с tsvector.
+Хешируйте пароль.
 
-### Задача 3: JSONB queries
-Работа с JSONB полями.
+**Ожидаемый результат:**
+```
+Хеш: bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+```
 
-### Задача 4: Array operations
-Операции с массивами PostgreSQL.
+**Начальный код:**
+```go
+package main
 
-### Задача 5: CTE queries
-Использование WITH (Common Table Expressions).
+import "fmt"
 
-### Задача 6: Window functions
-Оконные функции (RANK, ROW_NUMBER).
+func main() {
+    fmt.Println("Хеш: bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)")
+}
+```
 
-### Задача 7: Partitioning
-Работа с партиционированными таблицами.
+**Ожидаемый вывод:**
+```
+Хеш: bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+```
 
-### Задача 8: Listen/Notify
-Реализация pub/sub через LISTEN/NOTIFY.
+**Баллы:** 15
+
+### Задание 2: Проверка пароля
+
+Сравните пароль с хешем.
+
+**Ожидаемый результат:**
+```
+Проверка: bcrypt.CompareHashAndPassword(hash, []byte(password))
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Проверка: bcrypt.CompareHashAndPassword(hash, []byte(password))")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Проверка: bcrypt.CompareHashAndPassword(hash, []byte(password))
+```
+
+**Баллы:** 15
+
+### Задание 3: HTTPS
+
+Запустите HTTPS сервер.
+
+**Ожидаемый результат:**
+```
+HTTPS: http.ListenAndServeTLS(":443", "cert.pem", "key.pem", nil)
+```
+
+**Начальный код:**
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+// TODO: Реализуйте HTTP handler
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+
+**Ожидаемый вывод:**
+```
+HTTPS: http.ListenAndServeTLS(":443", "cert.pem", "key.pem", nil)
+```
+
+**Баллы:** 15
+
+### Задание 4: CORS
+
+Настройте CORS.
+
+**Ожидаемый результат:**
+```
+CORS: Access-Control-Allow-Origin: *
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("CORS: Access-Control-Allow-Origin: *")
+}
+```
+
+**Ожидаемый вывод:**
+```
+CORS: Access-Control-Allow-Origin: *
+```
+
+**Баллы:** 10
+
+### Задание 5: CSRF защита
+
+Защитите от CSRF.
+
+**Ожидаемый результат:**
+```
+CSRF: token в форме + проверка на сервере
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("CSRF: token в форме + проверка на сервере")
+}
+```
+
+**Ожидаемый вывод:**
+```
+CSRF: token в форме + проверка на сервере
+```
+
+**Баллы:** 15

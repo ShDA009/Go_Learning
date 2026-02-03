@@ -1,0 +1,692 @@
+# Создание разделяемого модуля в Go
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Разделяемый модуль** — переиспользуемая библиотека для нескольких проектов
+2. **replace директива** — связывание локальных модулей без публикации
+3. **Локальная разработка** — возможность тестировать модуль до публикации
+4. **Путь модуля** — обычно URL репозитория (github.com/user/package)
+5. **Экспорт** — только публичные (с большой буквы) идентификаторы доступны извне
+</Overview>
+
+<Theory>
+### Что такое разделяемый модуль?
+
+**Разделяемый модуль** — это библиотека, которую можно использовать в нескольких проектах. Например:
+- Утилиты валидации
+- Клиент API вашей компании
+- Общие структуры данных
+
+### Когда создавать библиотеку?
+
+- Код используется в 2+ проектах
+- Код достаточно стабилен
+- Код логически обособлен
+
+### Два сценария разработки
+
+**1. Локальная разработка** — библиотека на вашем компьютере:
+```go
+// go.mod основного проекта
+replace github.com/myorg/mylib => ../mylib
+```
+
+**2. Публикация** — библиотека на GitHub/GitLab:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+### replace директива
+
+`replace` перенаправляет импорт на локальную папку:
+
+```go
+module myapp
+
+require github.com/myorg/mylib v0.0.0
+
+replace github.com/myorg/mylib => ../mylib
+```
+
+**Важно:** `replace` работает только в главном модуле. Если ваш модуль импортируется другими — они не увидят ваш `replace`.
+
+### Структура хорошей библиотеки
+
+```
+mylib/
+├── go.mod              # module github.com/myorg/mylib
+├── mylib.go            # публичные функции
+├── mylib_test.go       # тесты
+├── internal/           # приватный код
+│   └── helpers.go
+├── LICENSE             # лицензия (важно!)
+└── README.md           # документация
+```
+
+### Экспорт — что видят пользователи?
+
+```go
+package mylib
+
+// Calculate экспортируется (заглавная)
+func Calculate(x int) int {
+    return helper(x) * 2
+}
+
+// helper НЕ экспортируется (строчная)
+func helper(x int) int {
+    return x + 1
+}
+```
+
+### Версионирование библиотек
+
+Следуйте Semantic Versioning:
+- **v0.x.x** — нестабильная версия, API может меняться
+- **v1.x.x** — стабильный API
+- **v2+** — требует изменения пути модуля
+
+```go
+// v1
+module github.com/myorg/mylib
+
+// v2 — суффикс /v2
+module github.com/myorg/mylib/v2
+```
+
+### Публикация библиотеки
+
+1. Создайте репозиторий на GitHub
+2. Загрузите код
+3. Создайте тег версии:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+4. Пользователи могут импортировать:
+   ```bash
+   go get github.com/myorg/mylib@v1.0.0
+   ```
+</Theory>
+
+<Syntax>
+### Создание библиотеки
+
+```bash
+# В папке библиотеки
+go mod init github.com/username/mylib
+```
+
+### Подключение локального модуля
+
+```bash
+# В папке основного проекта
+go mod edit -replace="github.com/username/mylib=../mylib"
+go mod tidy
+```
+
+### Директива replace в go.mod
+
+```go
+module myapp
+
+go 1.21
+
+require github.com/username/mylib v0.0.0
+
+replace github.com/username/mylib => ../mylib
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Структура проектов
+
+```
+projects/
+├── mylib/              # Разделяемый модуль (библиотека)
+│   ├── go.mod
+│   └── math.go
+└── myapp/              # Основное приложение
+    ├── go.mod
+    └── main.go
+```
+
+### Шаг 1: Создание библиотеки
+
+**Создаём папку и инициализируем модуль:**
+```bash
+mkdir -p projects/mylib
+cd projects/mylib
+go mod init github.com/myuser/mylib
+```
+
+**mylib/go.mod:**
+```go
+module github.com/myuser/mylib
+
+go 1.21
+```
+
+**mylib/math.go:**
+```go
+package mylib
+
+import "math"
+
+// Add складывает два числа
+func Add(a, b float64) float64 {
+    return a + b
+}
+
+// Subtract вычитает b из a
+func Subtract(a, b float64) float64 {
+    return a - b
+}
+
+// Multiply умножает два числа
+func Multiply(a, b float64) float64 {
+    return a * b
+}
+
+// Divide делит a на b (возвращает 0 при делении на 0)
+func Divide(a, b float64) float64 {
+    if b == 0 {
+        return 0
+    }
+    return a / b
+}
+
+// Sqrt возвращает квадратный корень
+func Sqrt(x float64) float64 {
+    return math.Sqrt(x)
+}
+
+// Power возводит base в степень exp
+func Power(base, exp float64) float64 {
+    return math.Pow(base, exp)
+}
+```
+
+### Шаг 2: Создание основного приложения
+
+```bash
+mkdir -p projects/myapp
+cd projects/myapp
+go mod init myapp
+```
+
+**myapp/go.mod (начальный):**
+```go
+module myapp
+
+go 1.21
+```
+
+**myapp/main.go:**
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/myuser/mylib"
+)
+
+func main() {
+    a, b := 10.0, 5.0
+    
+    fmt.Printf("%.1f + %.1f = %.1f\n", a, b, mylib.Add(a, b))
+    fmt.Printf("%.1f - %.1f = %.1f\n", a, b, mylib.Subtract(a, b))
+    fmt.Printf("%.1f * %.1f = %.1f\n", a, b, mylib.Multiply(a, b))
+    fmt.Printf("%.1f / %.1f = %.1f\n", a, b, mylib.Divide(a, b))
+    
+    fmt.Printf("√%.1f = %.2f\n", a, mylib.Sqrt(a))
+    fmt.Printf("%.1f^%.1f = %.1f\n", a, b, mylib.Power(a, b))
+}
+```
+
+### Шаг 3: Связывание модулей
+
+```bash
+cd projects/myapp
+
+# Добавляем replace директиву
+go mod edit -replace="github.com/myuser/mylib=../mylib"
+
+# Синхронизируем зависимости
+go mod tidy
+```
+
+**myapp/go.mod (после):**
+```go
+module myapp
+
+go 1.21
+
+require github.com/myuser/mylib v0.0.0-00010101000000-000000000000
+
+replace github.com/myuser/mylib => ../mylib
+```
+
+### Шаг 4: Запуск
+
+```bash
+cd projects/myapp
+go run .
+```
+
+Вывод:
+```
+10.0 + 5.0 = 15.0
+10.0 - 5.0 = 5.0
+10.0 * 5.0 = 50.0
+10.0 / 5.0 = 2.0
+√10.0 = 3.16
+10.0^5.0 = 100000.0
+```
+
+### Более сложный пример: Библиотека со структурами
+
+**mylib/user.go:**
+```go
+package mylib
+
+import "fmt"
+
+// User представляет пользователя
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+// NewUser создаёт нового пользователя
+func NewUser(id int, name, email string) *User {
+    return &User{
+        ID:    id,
+        Name:  name,
+        Email: email,
+    }
+}
+
+// String возвращает строковое представление
+func (u *User) String() string {
+    return fmt.Sprintf("User{ID: %d, Name: %s, Email: %s}", u.ID, u.Name, u.Email)
+}
+
+// Validate проверяет валидность данных
+func (u *User) Validate() error {
+    if u.Name == "" {
+        return fmt.Errorf("name cannot be empty")
+    }
+    if u.Email == "" {
+        return fmt.Errorf("email cannot be empty")
+    }
+    return nil
+}
+```
+
+**mylib/storage.go:**
+```go
+package mylib
+
+import "errors"
+
+// Storage хранит пользователей
+type Storage struct {
+    users map[int]*User
+}
+
+// NewStorage создаёт новое хранилище
+func NewStorage() *Storage {
+    return &Storage{
+        users: make(map[int]*User),
+    }
+}
+
+// Save сохраняет пользователя
+func (s *Storage) Save(user *User) error {
+    if err := user.Validate(); err != nil {
+        return err
+    }
+    s.users[user.ID] = user
+    return nil
+}
+
+// Get возвращает пользователя по ID
+func (s *Storage) Get(id int) (*User, error) {
+    user, ok := s.users[id]
+    if !ok {
+        return nil, errors.New("user not found")
+    }
+    return user, nil
+}
+
+// Delete удаляет пользователя
+func (s *Storage) Delete(id int) {
+    delete(s.users, id)
+}
+
+// All возвращает всех пользователей
+func (s *Storage) All() []*User {
+    result := make([]*User, 0, len(s.users))
+    for _, user := range s.users {
+        result = append(result, user)
+    }
+    return result
+}
+```
+
+**myapp/main.go:**
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/myuser/mylib"
+)
+
+func main() {
+    storage := mylib.NewStorage()
+    
+    // Создаём и сохраняем пользователей
+    user1 := mylib.NewUser(1, "Alice", "alice@example.com")
+    user2 := mylib.NewUser(2, "Bob", "bob@example.com")
+    
+    storage.Save(user1)
+    storage.Save(user2)
+    
+    // Получаем пользователя
+    if user, err := storage.Get(1); err == nil {
+        fmt.Println("Found:", user.String())
+    }
+    
+    // Все пользователи
+    fmt.Println("\nAll users:")
+    for _, user := range storage.All() {
+        fmt.Println(" -", user.String())
+    }
+}
+```
+
+### Библиотека с несколькими пакетами
+
+**Структура:**
+```
+mylib/
+├── go.mod
+├── math/
+│   └── math.go       # package math
+├── strings/
+│   └── strings.go    # package strings
+└── utils/
+    └── utils.go      # package utils
+```
+
+**mylib/math/math.go:**
+```go
+package math
+
+func Sum(numbers ...int) int {
+    total := 0
+    for _, n := range numbers {
+        total += n
+    }
+    return total
+}
+```
+
+**mylib/strings/strings.go:**
+```go
+package strings
+
+import "strings"
+
+func Reverse(s string) string {
+    runes := []rune(s)
+    for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+        runes[i], runes[j] = runes[j], runes[i]
+    }
+    return string(runes)
+}
+
+func ToTitle(s string) string {
+    return strings.Title(s)
+}
+```
+
+**Использование:**
+```go
+package main
+
+import (
+    "fmt"
+    mymath "github.com/myuser/mylib/math"
+    mystrings "github.com/myuser/mylib/strings"
+)
+
+func main() {
+    fmt.Println(mymath.Sum(1, 2, 3, 4, 5))  // 15
+    fmt.Println(mystrings.Reverse("hello")) // olleh
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неправильный путь replace
+
+```go
+// ❌ НЕПРАВИЛЬНО — абсолютный путь
+replace github.com/user/lib => /home/user/projects/lib
+
+// ✅ ПРАВИЛЬНО — относительный путь
+replace github.com/user/lib => ../lib
+```
+
+### 2. Забыли go mod tidy
+
+```bash
+# ❌ После добавления replace
+go mod edit -replace="..."
+go run .  # ОШИБКА: module not found
+
+# ✅ ПРАВИЛЬНО
+go mod edit -replace="..."
+go mod tidy  # добавит require
+go run .     # OK
+```
+
+### 3. Несовпадение имени пакета и модуля
+
+```go
+// mylib/go.mod
+module github.com/user/mylib
+
+// mylib/math.go
+package mylib  // OK — совпадает с последней частью пути модуля
+
+// ИЛИ
+package mathutils  // тоже OK, но import будет другим
+```
+
+```go
+// Если пакет называется mylib:
+import "github.com/user/mylib"
+mylib.Add(1, 2)
+
+// Если пакет называется mathutils:
+import "github.com/user/mylib"
+mathutils.Add(1, 2)  // используем имя ПАКЕТА, не модуля
+```
+
+### 4. Приватные функции не видны
+
+```go
+// mylib/math.go
+package mylib
+
+func add(a, b int) int {  // приватная (строчная буква)
+    return a + b
+}
+
+// main.go
+mylib.add(1, 2)  // ОШИБКА: undefined
+
+// Решение: Add с большой буквы
+```
+
+### 5. Забыли удалить replace перед публикацией
+
+```go
+// ❌ go.mod с replace нельзя публиковать
+replace github.com/user/lib => ../lib
+
+// ✅ Удалите replace перед публикацией
+// Зависимость должна быть доступна по указанному пути
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: go mod init</Title>
+<Prompt>
+Создание нового модуля.
+</Prompt>
+<Hints>
+- Путь модуля = import path
+- Обычно URL репозитория
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Команда: go mod init github.com/user/mymodule")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Команда: go mod init github.com/user/mymodule
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Семантическое версионирование</Title>
+<Prompt>
+Формат версий в Go.
+</Prompt>
+<Hints>
+- MAJOR: несовместимые изменения
+- MINOR: новые функции
+- PATCH: исправления
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Формат: vMAJOR.MINOR.PATCH")
+    fmt.Println("Пример: v1.2.3")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Формат: vMAJOR.MINOR.PATCH
+Пример: v1.2.3
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: go.sum</Title>
+<Prompt>
+Назначение файла go.sum.
+</Prompt>
+<Hints>
+- Автоматически обновляется
+- Коммитить в git
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("go.sum:")
+    fmt.Println("- Контрольные суммы")
+    fmt.Println("- Безопасность")
+    fmt.Println("- Воспроизводимость")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+go.sum:
+- Контрольные суммы
+- Безопасность
+- Воспроизводимость
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Создание тега версии</Title>
+<Prompt>
+Как опубликовать версию модуля.
+</Prompt>
+<Hints>
+- Тег должен соответствовать SemVer
+- Начинается с v
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Шаги публикации:")
+    fmt.Println("1. git tag v1.0.0")
+    fmt.Println("2. git push origin v1.0.0")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Шаги публикации:
+1. git tag v1.0.0
+2. git push origin v1.0.0
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: require в go.mod</Title>
+<Prompt>
+Добавление зависимости.
+</Prompt>
+<Hints>
+- go get добавляет автоматически
+- Можно редактировать вручную
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("go.mod:")
+    fmt.Println("require github.com/pkg/errors v0.9.1")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+go.mod:
+require github.com/pkg/errors v0.9.1
+</ExpectedOutput>
+</Task>

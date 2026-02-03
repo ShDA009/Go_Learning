@@ -1,0 +1,533 @@
+# Статические файлы
+
+<Meta>
+reading_time: 5
+</Meta>
+
+<Overview>
+1. **http.FileServer** — сервер статических файлов
+2. **http.Dir** — указание директории с файлами
+3. **http.ServeFile** — отдача одного файла
+4. **StripPrefix** — удаление префикса из URL
+5. **Кэширование** — заголовки для кэша браузера
+</Overview>
+
+<Theory>
+### Зачем нужен FileServer?
+
+Веб-приложениям нужно отдавать статические файлы:
+- CSS стили
+- JavaScript
+- Изображения
+- Шрифты
+
+### Простейший файловый сервер
+
+```go
+// Папка ./static/ доступна по /static/
+fs := http.FileServer(http.Dir("./static"))
+http.Handle("/static/", http.StripPrefix("/static/", fs))
+```
+
+**StripPrefix** нужен чтобы убрать `/static/` из пути:
+```
+Запрос:  /static/css/style.css
+Файл:    ./static/css/style.css (без StripPrefix)
+         ./css/style.css        (с StripPrefix)
+```
+
+### Как работает http.Dir?
+
+```go
+http.Dir("./static")  // ограничивает доступ папкой ./static
+```
+
+⚠️ **Безопасность:** без `http.Dir` можно было бы читать любые файлы!
+
+### Отдача одного файла
+
+```go
+func faviconHandler(w http.ResponseWriter, r *http.Request) {
+    http.ServeFile(w, r, "./static/favicon.ico")
+}
+http.HandleFunc("/favicon.ico", faviconHandler)
+```
+
+### Кэширование статики
+
+```go
+func staticHandler(h http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Кэш на 1 год
+        w.Header().Set("Cache-Control", "public, max-age=31536000")
+        h.ServeHTTP(w, r)
+    })
+}
+
+fs := http.FileServer(http.Dir("./static"))
+http.Handle("/static/", staticHandler(http.StripPrefix("/static/", fs)))
+```
+
+### Встроенные файлы (embed)
+
+Go 1.16+ позволяет встраивать файлы в бинарник:
+
+```go
+//go:embed static/*
+var staticFS embed.FS
+
+func main() {
+    fs := http.FileServer(http.FS(staticFS))
+    http.Handle("/static/", fs)
+}
+```
+
+Теперь статика внутри исполняемого файла!
+
+### Структура папок
+
+```
+myapp/
+├── main.go
+├── static/
+│   ├── css/
+│   │   └── style.css
+│   ├── js/
+│   │   └── app.js
+│   └── images/
+│       └── logo.png
+└── templates/
+    └── index.html
+```
+</Theory>
+
+<Syntax>
+### FileServer
+
+```go
+http.FileServer(root FileSystem) Handler
+http.Dir(name string) Dir
+```
+
+### ServeFile
+
+```go
+http.ServeFile(w ResponseWriter, r *Request, name string)
+```
+
+### StripPrefix
+
+```go
+http.StripPrefix(prefix string, h Handler) Handler
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Простой файловый сервер
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    // Отдаём файлы из папки "static"
+    fs := http.FileServer(http.Dir("static"))
+    
+    http.Handle("/", fs)
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Статика с префиксом
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    // URL: /static/style.css → файл: static/style.css
+    fs := http.FileServer(http.Dir("static"))
+    http.Handle("/static/", http.StripPrefix("/static/", fs))
+    
+    // Главная страница
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, `
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Hello!</h1>
+    <script src="/static/app.js"></script>
+</body>
+</html>
+        `)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Отдача одного файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "public/index.html")
+    })
+    
+    http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "public/about.html")
+    })
+    
+    http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "public/favicon.ico")
+    })
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Комбинация статики и динамики
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    // Статические файлы
+    fs := http.FileServer(http.Dir("static"))
+    http.Handle("/static/", http.StripPrefix("/static/", fs))
+    
+    // Главная страница (статическая)
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        if r.URL.Path != "/" {
+            http.NotFound(w, r)
+            return
+        }
+        http.ServeFile(w, r, "static/index.html")
+    })
+    
+    // API (динамическое)
+    http.HandleFunc("/api/data", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]string{
+            "message": "Hello from API",
+        })
+    })
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Кэширование статики
+
+```go
+package main
+
+import (
+    "net/http"
+    "time"
+)
+
+func cacheMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Кэш на 1 час
+        w.Header().Set("Cache-Control", "public, max-age=3600")
+        w.Header().Set("Expires", time.Now().Add(time.Hour).Format(http.TimeFormat))
+        next.ServeHTTP(w, r)
+    })
+}
+
+func main() {
+    fs := http.FileServer(http.Dir("static"))
+    
+    http.Handle("/static/", 
+        http.StripPrefix("/static/", 
+            cacheMiddleware(fs)))
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Защита от directory listing
+
+```go
+package main
+
+import (
+    "net/http"
+    "os"
+    "path"
+)
+
+type neuteredFileSystem struct {
+    fs http.FileSystem
+}
+
+func (nfs neuteredFileSystem) Open(p string) (http.File, error) {
+    f, err := nfs.fs.Open(p)
+    if err != nil {
+        return nil, err
+    }
+    
+    s, _ := f.Stat()
+    if s.IsDir() {
+        // Проверяем наличие index.html
+        index := path.Join(p, "index.html")
+        if _, err := nfs.fs.Open(index); err != nil {
+            closeErr := f.Close()
+            if closeErr != nil {
+                return nil, closeErr
+            }
+            return nil, os.ErrNotExist
+        }
+    }
+    
+    return f, nil
+}
+
+func main() {
+    fs := neuteredFileSystem{http.Dir("static")}
+    
+    http.Handle("/", http.FileServer(fs))
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Загрузка файлов (скачивание)
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "path/filepath"
+)
+
+func downloadHandler(w http.ResponseWriter, r *http.Request) {
+    filename := r.URL.Query().Get("file")
+    if filename == "" {
+        http.Error(w, "File not specified", http.StatusBadRequest)
+        return
+    }
+    
+    // Безопасность: только имя файла без пути
+    filename = filepath.Base(filename)
+    filepath := filepath.Join("downloads", filename)
+    
+    // Заголовок для скачивания
+    w.Header().Set("Content-Disposition", 
+        fmt.Sprintf("attachment; filename=%s", filename))
+    
+    http.ServeFile(w, r, filepath)
+}
+
+func main() {
+    http.HandleFunc("/download", downloadHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### SPA (Single Page Application) роутинг
+
+```go
+package main
+
+import (
+    "net/http"
+    "os"
+    "path/filepath"
+)
+
+func spaHandler(w http.ResponseWriter, r *http.Request) {
+    // Проверяем существование файла
+    path := filepath.Join("public", r.URL.Path)
+    
+    _, err := os.Stat(path)
+    if os.IsNotExist(err) {
+        // Файл не найден — отдаём index.html (для SPA роутинга)
+        http.ServeFile(w, r, "public/index.html")
+        return
+    }
+    
+    // Файл существует — отдаём его
+    http.ServeFile(w, r, path)
+}
+
+func main() {
+    http.HandleFunc("/", spaHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неверный путь к папке
+
+```go
+// ❌ Относительный путь может не работать
+http.FileServer(http.Dir("./static"))
+
+// ✅ Проверьте текущую директорию
+// или используйте абсолютный путь
+```
+
+### 2. Directory listing
+
+```go
+// ❌ По умолчанию показывает содержимое папки
+http.FileServer(http.Dir("static"))
+
+// ✅ Используйте neuteredFileSystem или
+// добавьте index.html в каждую папку
+```
+
+### 3. StripPrefix забыт
+
+```go
+// ❌ URL /static/style.css → файл static/static/style.css
+http.Handle("/static/", http.FileServer(http.Dir("static")))
+
+// ✅ Используйте StripPrefix
+http.Handle("/static/", 
+    http.StripPrefix("/static/", 
+        http.FileServer(http.Dir("static"))))
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Swagger/OpenAPI</Title>
+<Prompt>
+Документируйте API.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Swagger: swaggo/swag для генерации документации")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Swagger: swaggo/swag для генерации документации
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Swagger аннотации</Title>
+<Prompt>
+Добавьте аннотации к handlers.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Аннотации: // @Summary, @Description, @Success, @Router")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Аннотации: // @Summary, @Description, @Success, @Router
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Swagger UI</Title>
+<Prompt>
+Подключите Swagger UI.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Swagger UI: /swagger/index.html")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Swagger UI: /swagger/index.html
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Генерация docs</Title>
+<Prompt>
+Сгенерируйте документацию.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Генерация: swag init")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Генерация: swag init
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Request/Response models</Title>
+<Prompt>
+Определите модели для Swagger.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Модели: struct с json тегами")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Модели: struct с json тегами
+</ExpectedOutput>
+</Task>

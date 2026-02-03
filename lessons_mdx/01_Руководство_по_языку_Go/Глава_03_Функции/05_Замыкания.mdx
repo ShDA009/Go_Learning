@@ -1,0 +1,734 @@
+# Замыкания (Closures)
+
+<Meta>
+reading_time: 11
+</Meta>
+
+<Overview>
+- **Замыкание** — функция + захваченное окружение (переменные из внешней области)
+- Замыкание "помнит" переменные даже после выхода из внешней функции
+- Каждый вызов внешней функции создаёт **новое независимое замыкание**
+- Замыкания позволяют создавать **приватное состояние**
+- Основа для: генераторов, фабрик, middleware, мемоизации
+
+### Структура замыкания
+
+```
+┌─────────────────────────────────────┐
+│ Внешняя функция                     │
+│ ┌─────────────────────────────────┐ │
+│ │ Локальные переменные            │ │  ← Лексическое окружение
+│ │ (захваченное состояние)         │ │
+│ └─────────────────────────────────┘ │
+│ ┌─────────────────────────────────┐ │
+│ │ Внутренняя (возвращаемая)       │ │
+│ │ функция                         │ │  ← Замыкание
+│ │ (имеет доступ к переменным)     │ │
+│ └─────────────────────────────────┘ │
+└─────────────────────────────────────┘
+```
+</Overview>
+
+<Theory>
+### Что такое замыкание?
+
+**Замыкание (closure)** — это функция вместе с её лексическим окружением. Проще говоря, функция "запоминает" переменные из места, где была создана.
+
+```go
+func counter() func() int {
+    count := 0  // эта переменная "захвачена"
+    return func() int {
+        count++  // функция помнит count
+        return count
+    }
+}
+
+c := counter()
+c()  // 1
+c()  // 2
+c()  // 3
+```
+
+Переменная `count` продолжает существовать, хотя функция `counter()` уже завершилась!
+
+### Почему это работает?
+
+Обычно локальные переменные "умирают" после выхода из функции. Но если на них есть ссылка из возвращаемой функции, Go сохраняет их в куче (heap).
+
+### Каждый вызов — новое замыкание
+
+```go
+c1 := counter()
+c2 := counter()
+
+c1()  // 1
+c1()  // 2
+c2()  // 1 (независимый счётчик!)
+c2()  // 2
+c1()  // 3
+```
+
+`c1` и `c2` — два независимых замыкания, каждое со своей копией `count`.
+
+### Практические применения
+
+**1. Счётчики и генераторы:**
+```go
+func idGenerator() func() int {
+    id := 0
+    return func() int {
+        id++
+        return id
+    }
+}
+```
+
+**2. Фабрика функций:**
+```go
+func makeAdder(x int) func(int) int {
+    return func(y int) int {
+        return x + y
+    }
+}
+add5 := makeAdder(5)
+add10 := makeAdder(10)
+```
+
+**3. Приватное состояние (инкапсуляция):**
+```go
+func newStack() (func(int), func() int) {
+    var stack []int
+    
+    push := func(x int) {
+        stack = append(stack, x)
+    }
+    
+    pop := func() int {
+        n := stack[len(stack)-1]
+        stack = stack[:len(stack)-1]
+        return n
+    }
+    
+    return push, pop
+}
+// stack недоступен извне, только через push/pop
+```
+
+**4. Middleware:**
+```go
+func withAuth(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        if !isAuthenticated(r) {
+            http.Error(w, "Unauthorized", 401)
+            return
+        }
+        next(w, r)
+    }
+}
+```
+
+### Ловушка: захват переменной цикла
+
+```go
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // скорее всего выведет 3, 3, 3
+    }()
+}
+```
+
+Все горутины захватывают **одну и ту же** переменную `i`, которая к моменту выполнения уже равна 3.
+
+**Решение 1:** Локальная копия
+```go
+for i := 0; i < 3; i++ {
+    i := i  // создаём новую переменную
+    go func() {
+        fmt.Println(i)
+    }()
+}
+```
+
+**Решение 2:** Параметр функции
+```go
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        fmt.Println(n)
+    }(i)  // передаём i как аргумент
+}
+```
+</Theory>
+
+<Syntax>
+### Базовое замыкание
+```go
+func outer() func() {
+    variable := value  // захваченная переменная
+    
+    return func() {
+        // доступ к variable
+    }
+}
+```
+
+### Замыкание с параметром
+```go
+func makeAdder(n int) func(int) int {
+    return func(x int) int {
+        return x + n  // n захвачена
+    }
+}
+```
+
+### Замыкание с мутабельным состоянием
+```go
+func counter() func() int {
+    count := 0
+    return func() int {
+        count++  // изменяем захваченную переменную
+        return count
+    }
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Простое замыкание
+```go
+package main
+
+import "fmt"
+
+func outer() func() {
+    message := "Привет из замыкания!"
+    
+    return func() {
+        fmt.Println(message)  // message захвачена
+    }
+}
+
+func main() {
+    fn := outer()
+    fn()  // Привет из замыкания!
+    fn()  // Привет из замыкания!
+}
+```
+
+### Пример 2: Счётчик (классический пример)
+```go
+package main
+
+import "fmt"
+
+func makeCounter() func() int {
+    count := 0  // приватное состояние
+    
+    return func() int {
+        count++
+        return count
+    }
+}
+
+func main() {
+    // Каждый вызов makeCounter создаёт новое независимое состояние
+    counter1 := makeCounter()
+    counter2 := makeCounter()
+    
+    fmt.Println("Counter1:", counter1())  // 1
+    fmt.Println("Counter1:", counter1())  // 2
+    fmt.Println("Counter1:", counter1())  // 3
+    
+    fmt.Println("Counter2:", counter2())  // 1 (независимый!)
+    fmt.Println("Counter2:", counter2())  // 2
+    
+    fmt.Println("Counter1:", counter1())  // 4
+}
+```
+
+### Пример 3: Генератор последовательности
+```go
+package main
+
+import "fmt"
+
+func fibonacci() func() int {
+    a, b := 0, 1
+    
+    return func() int {
+        result := a
+        a, b = b, a+b
+        return result
+    }
+}
+
+func powers(base int) func() int {
+    current := 1
+    
+    return func() int {
+        result := current
+        current *= base
+        return result
+    }
+}
+
+func main() {
+    fib := fibonacci()
+    fmt.Print("Фибоначчи: ")
+    for i := 0; i < 10; i++ {
+        fmt.Print(fib(), " ")
+    }
+    fmt.Println()
+    
+    pow2 := powers(2)
+    fmt.Print("Степени 2: ")
+    for i := 0; i < 8; i++ {
+        fmt.Print(pow2(), " ")
+    }
+    fmt.Println()
+}
+```
+
+### Пример 4: Фабрика функций с захватом параметра
+```go
+package main
+
+import "fmt"
+
+func multiplier(factor int) func(int) int {
+    return func(x int) int {
+        return x * factor  // factor захвачен
+    }
+}
+
+func greeter(prefix string) func(string) string {
+    return func(name string) string {
+        return prefix + ", " + name + "!"
+    }
+}
+
+func main() {
+    double := multiplier(2)
+    triple := multiplier(3)
+    half := multiplier(0)  // ну, почти половина :)
+    
+    fmt.Println("double(5) =", double(5))  // 10
+    fmt.Println("triple(5) =", triple(5))  // 15
+    
+    hello := greeter("Привет")
+    goodbye := greeter("До свидания")
+    
+    fmt.Println(hello("Анна"))    // Привет, Анна!
+    fmt.Println(goodbye("Борис")) // До свидания, Борис!
+}
+```
+
+### Пример 5: Аккумулятор
+```go
+package main
+
+import "fmt"
+
+func makeAccumulator(initial int) (func(int) int, func() int) {
+    sum := initial
+    
+    add := func(n int) int {
+        sum += n
+        return sum
+    }
+    
+    get := func() int {
+        return sum
+    }
+    
+    return add, get
+}
+
+func main() {
+    add, get := makeAccumulator(0)
+    
+    fmt.Println("Начало:", get())  // 0
+    fmt.Println("Добавили 5:", add(5))   // 5
+    fmt.Println("Добавили 10:", add(10)) // 15
+    fmt.Println("Добавили 3:", add(3))   // 18
+    fmt.Println("Итого:", get())  // 18
+}
+```
+
+### Пример 6: Мемоизация (кэширование)
+```go
+package main
+
+import "fmt"
+
+func memoize(fn func(int) int) func(int) int {
+    cache := make(map[int]int)
+    
+    return func(n int) int {
+        if result, ok := cache[n]; ok {
+            fmt.Printf("  (кэш для %d)\n", n)
+            return result
+        }
+        result := fn(n)
+        cache[n] = result
+        return result
+    }
+}
+
+func slowSquare(n int) int {
+    fmt.Printf("  вычисляем %d²...\n", n)
+    return n * n
+}
+
+func main() {
+    cachedSquare := memoize(slowSquare)
+    
+    fmt.Println("square(5) =", cachedSquare(5))
+    fmt.Println("square(3) =", cachedSquare(3))
+    fmt.Println("square(5) =", cachedSquare(5))  // из кэша
+    fmt.Println("square(3) =", cachedSquare(3))  // из кэша
+    fmt.Println("square(7) =", cachedSquare(7))
+}
+```
+
+### Пример 7: Middleware / Декораторы
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+type Operation func(int, int) int
+
+func withLogging(name string, op Operation) Operation {
+    return func(a, b int) int {
+        fmt.Printf("[LOG] %s(%d, %d) вызвана\n", name, a, b)
+        result := op(a, b)
+        fmt.Printf("[LOG] %s вернула %d\n", name, result)
+        return result
+    }
+}
+
+func withTiming(op Operation) Operation {
+    return func(a, b int) int {
+        start := time.Now()
+        result := op(a, b)
+        fmt.Printf("[TIME] Выполнено за %v\n", time.Since(start))
+        return result
+    }
+}
+
+func add(a, b int) int { return a + b }
+
+func main() {
+    // Оборачиваем функцию
+    loggedAdd := withLogging("add", add)
+    result := loggedAdd(5, 3)
+    fmt.Println("Результат:", result)
+    
+    fmt.Println()
+    
+    // Комбинируем декораторы
+    timedLoggedAdd := withTiming(withLogging("add", add))
+    timedLoggedAdd(10, 20)
+}
+```
+
+### Пример 8: Состояние объекта через замыкания
+```go
+package main
+
+import "fmt"
+
+type Stack struct {
+    Push func(int)
+    Pop  func() (int, bool)
+    Peek func() (int, bool)
+    Size func() int
+}
+
+func NewStack() Stack {
+    data := []int{}  // приватное состояние
+    
+    return Stack{
+        Push: func(val int) {
+            data = append(data, val)
+        },
+        Pop: func() (int, bool) {
+            if len(data) == 0 {
+                return 0, false
+            }
+            val := data[len(data)-1]
+            data = data[:len(data)-1]
+            return val, true
+        },
+        Peek: func() (int, bool) {
+            if len(data) == 0 {
+                return 0, false
+            }
+            return data[len(data)-1], true
+        },
+        Size: func() int {
+            return len(data)
+        },
+    }
+}
+
+func main() {
+    stack := NewStack()
+    
+    stack.Push(1)
+    stack.Push(2)
+    stack.Push(3)
+    
+    fmt.Println("Размер:", stack.Size())  // 3
+    
+    if val, ok := stack.Peek(); ok {
+        fmt.Println("Вершина:", val)  // 3
+    }
+    
+    for stack.Size() > 0 {
+        val, _ := stack.Pop()
+        fmt.Println("Pop:", val)
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Захват переменной цикла
+```go
+// ❌ Неправильно — все функции видят последнее значение i
+funcs := []func(){}
+for i := 0; i < 3; i++ {
+    funcs = append(funcs, func() {
+        fmt.Println(i)  // все выведут 3!
+    })
+}
+for _, f := range funcs {
+    f()  // 3, 3, 3
+}
+
+// ✅ Правильно — создаём копию
+funcs := []func(){}
+for i := 0; i < 3; i++ {
+    i := i  // создаём новую переменную
+    funcs = append(funcs, func() {
+        fmt.Println(i)
+    })
+}
+for _, f := range funcs {
+    f()  // 0, 1, 2
+}
+```
+
+### 2. Непонимание времени захвата
+```go
+// ⚠️ Осторожно — замыкание видит ТЕКУЩЕЕ значение
+x := 10
+fn := func() { fmt.Println(x) }
+
+x = 20
+fn()  // Выведет 20, не 10!
+
+// Если нужно "заморозить" значение:
+x := 10
+fn := func(val int) func() {
+    return func() { fmt.Println(val) }
+}(x)
+
+x = 20
+fn()  // Выведет 10
+```
+
+### 3. Утечка памяти через замыкания
+```go
+// ⚠️ Осторожно — большие данные остаются в памяти
+func createLeak() func() int {
+    hugeData := make([]byte, 100*1024*1024)  // 100 MB
+    small := len(hugeData)
+    
+    return func() int {
+        return small  // hugeData всё ещё в памяти!
+    }
+}
+
+// ✅ Лучше — явно обнуляем ненужные данные
+func noLeak() func() int {
+    hugeData := make([]byte, 100*1024*1024)
+    small := len(hugeData)
+    hugeData = nil  // освобождаем память
+    
+    return func() int {
+        return small
+    }
+}
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: Простое замыкание-счётчик</Title>
+<Prompt>
+Создайте функцию `counter()`, которая возвращает функцию-счётчик. Каждый вызов увеличивает счётчик на 1.
+</Prompt>
+<Hints>
+- Замыкание "захватывает" переменные из внешней области
+- `count := 0; return func() int { count++; return count }`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию counter
+
+func main() {
+    fmt.Println("Счётчик:")
+    // Создайте и используйте счётчик
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Счётчик:
+Вызов 1: 1
+Вызов 2: 2
+Вызов 3: 3
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Замыкание с начальным значением</Title>
+<Prompt>
+Создайте функцию `adder(start int)`, возвращающую функцию, которая прибавляет к накопленной сумме.
+</Prompt>
+<Hints>
+- Начальное значение становится частью замыкания
+- `sum := start; return func(n int) int { sum += n; return sum }`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию adder
+
+func main() {
+    fmt.Println("Аккумулятор с начальным значением 10:")
+    // Создайте и используйте аккумулятор
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Аккумулятор с начальным значением 10:
+Добавить 5: 15
+Добавить 3: 18
+Добавить 7: 25
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Независимые замыкания</Title>
+<Prompt>
+Покажите, что каждый вызов counter() создаёт независимый счётчик.
+</Prompt>
+<Hints>
+- Каждый вызов counter() создаёт новое замыкание
+- Счётчики не влияют друг на друга
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func counter() func() int {
+    n := 0
+    return func() int {
+        n++
+        return n
+    }
+}
+
+func main() {
+    fmt.Println("Два независимых счётчика:")
+    // Создайте c1 и c2, покажите независимость
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Два независимых счётчика:
+c1: 1, c2: 1
+c1: 2, c2: 2
+c1: 3, c2: 3
+c1: 4, c2: 3 (c2 не вызван)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Замыкание как фильтр</Title>
+<Prompt>
+Создайте функцию `makeFilter(min int)`, возвращающую функцию-фильтр, которая проверяет, больше ли число минимума.
+</Prompt>
+<Hints>
+- `return func(n int) bool { return n > min }`
+- Замыкание запоминает значение min
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию makeFilter
+
+func main() {
+    fmt.Println("Фильтр: числа > 5")
+    // Создайте фильтр и проверьте числа
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Фильтр: числа > 5
+Проверка 3: false
+Проверка 5: false
+Проверка 7: true
+Проверка 10: true
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="25">
+<Title>Задание 5: Замыкание с кешированием</Title>
+<Prompt>
+Создайте функцию `memoFactorial()`, которая возвращает функцию вычисления факториала с кешированием результатов.
+</Prompt>
+<Hints>
+- Используйте map для хранения вычисленных значений
+- Проверяйте наличие в кеше перед вычислением
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте memoFactorial
+
+func main() {
+    fmt.Println("Факториал с кешем:")
+    // Продемонстрируйте кеширование
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Факториал с кешем:
+5! = 120 (вычислено)
+5! = 120 (из кеша)
+3! = 6 (из кеша, часть предыдущего)
+7! = 5040 (вычислено)
+</ExpectedOutput>
+</Task>

@@ -42,6 +42,129 @@ type Response struct {
 
 ---
 
+## 📖 Теория
+
+### HTTP — протокол веба
+
+**HTTP** (HyperText Transfer Protocol) — основа всего веба. Go отлично поддерживает HTTP из коробки.
+
+### Простейший GET запрос
+
+```go
+resp, err := http.Get("https://api.example.com/data")
+if err != nil {
+    log.Fatal(err)
+}
+defer resp.Body.Close()  // ОБЯЗАТЕЛЬНО!
+
+body, err := io.ReadAll(resp.Body)
+fmt.Println(string(body))
+```
+
+### ВАЖНО: всегда закрывайте Body!
+
+```go
+resp, err := http.Get(url)
+if err != nil {
+    return err
+}
+defer resp.Body.Close()  // Даже если Body не читаем!
+```
+
+Незакрытый Body = утечка соединений!
+
+### Проверка статуса
+
+```go
+resp, _ := http.Get(url)
+defer resp.Body.Close()
+
+if resp.StatusCode != http.StatusOK {
+    return fmt.Errorf("bad status: %d", resp.StatusCode)
+}
+```
+
+### HTTP методы
+
+| Функция | Метод | Использование |
+|---------|-------|---------------|
+| `http.Get` | GET | Получить данные |
+| `http.Post` | POST | Отправить данные |
+| `http.PostForm` | POST | Отправить форму |
+| `http.Head` | HEAD | Только заголовки |
+
+### POST с JSON
+
+```go
+data := map[string]string{"name": "John", "age": "30"}
+jsonData, _ := json.Marshal(data)
+
+resp, err := http.Post(
+    "https://api.example.com/users",
+    "application/json",
+    bytes.NewBuffer(jsonData),
+)
+defer resp.Body.Close()
+```
+
+### POST форма
+
+```go
+formData := url.Values{
+    "username": {"john"},
+    "password": {"secret"},
+}
+
+resp, err := http.PostForm("https://example.com/login", formData)
+defer resp.Body.Close()
+```
+
+### Чтение заголовков ответа
+
+```go
+// Конкретный заголовок
+contentType := resp.Header.Get("Content-Type")
+
+// Все заголовки
+for key, values := range resp.Header {
+    fmt.Printf("%s: %v\n", key, values)
+}
+```
+
+### Обработка JSON ответа
+
+```go
+type User struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+resp, _ := http.Get("https://api.example.com/user/1")
+defer resp.Body.Close()
+
+var user User
+json.NewDecoder(resp.Body).Decode(&user)
+fmt.Printf("User: %+v\n", user)
+```
+
+---
+
+## 📋 Синтаксис
+
+### Структура Response
+
+```go
+type Response struct {
+    Status     string      // "200 OK"
+    StatusCode int         // 200
+    Header     http.Header // заголовки
+    Body       io.ReadCloser
+    // ...
+}
+```
+
+---
+
 ## 💻 Примеры кода
 
 ### Простой GET запрос
@@ -395,28 +518,139 @@ http.Get(url)
 
 ---
 
-## 📝 Практика
+## 🏋️ Практические задания
 
-### Задача 1: URL checker
-Проверьте доступность списка URL.
+### Задание 1: QueryRow
 
-### Задача 2: API client
-Клиент для публичного API (погода, курсы валют).
+Получите одну строку.
 
-### Задача 3: Web scraper
-Простой парсер веб-страниц.
+**Ожидаемый результат:**
+```
+QueryRow: db.QueryRow("SELECT...").Scan(&val)
+```
 
-### Задача 4: File uploader
-Загрузка файла на сервер.
+**Начальный код:**
+```go
+package main
 
-### Задача 5: Parallel downloader
-Параллельное скачивание файлов.
+import "fmt"
 
-### Задача 6: RSS reader
-Чтение и парсинг RSS лент.
+func main() {
+    fmt.Println("QueryRow: db.QueryRow(\"SELECT...\").Scan(&val)")
+}
+```
 
-### Задача 7: REST client
-Клиент для REST API с CRUD операциями.
+**Ожидаемый вывод:**
+```
+QueryRow: db.QueryRow("SELECT...").Scan(&val)
+```
 
-### Задача 8: Webhook sender
-Отправка webhook уведомлений.
+**Баллы:** 10
+
+### Задание 2: sql.NullString
+
+Обработайте NULL значения.
+
+**Ожидаемый результат:**
+```
+NULL: var name sql.NullString; if name.Valid {...}
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("NULL: var name sql.NullString; if name.Valid {...}")
+}
+```
+
+**Ожидаемый вывод:**
+```
+NULL: var name sql.NullString; if name.Valid {...}
+```
+
+**Баллы:** 15
+
+### Задание 3: Транзакции
+
+Используйте транзакции.
+
+**Ожидаемый результат:**
+```
+Tx: tx, _ := db.Begin(); tx.Commit() или tx.Rollback()
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Tx: tx, _ := db.Begin(); tx.Commit() или tx.Rollback()")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Tx: tx, _ := db.Begin(); tx.Commit() или tx.Rollback()
+```
+
+**Баллы:** 20
+
+### Задание 4: Context в запросах
+
+Используйте context для timeout.
+
+**Ожидаемый результат:**
+```
+Context: db.QueryContext(ctx, "SELECT...")
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Context: db.QueryContext(ctx, \"SELECT...\")")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Context: db.QueryContext(ctx, "SELECT...")
+```
+
+**Баллы:** 15
+
+### Задание 5: Connection pool
+
+Настройте пул соединений.
+
+**Ожидаемый результат:**
+```
+Pool: db.SetMaxOpenConns(25); db.SetMaxIdleConns(5)
+```
+
+**Начальный код:**
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Pool: db.SetMaxOpenConns(25); db.SetMaxIdleConns(5)")
+}
+```
+
+**Ожидаемый вывод:**
+```
+Pool: db.SetMaxOpenConns(25); db.SetMaxIdleConns(5)
+```
+
+**Баллы:** 15

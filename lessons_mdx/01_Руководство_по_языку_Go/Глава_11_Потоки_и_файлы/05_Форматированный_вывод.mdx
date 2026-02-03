@@ -1,0 +1,543 @@
+# Форматированный вывод (fmt.Fprint, Fprintf, Fprintln)
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **fmt.Fprint** — вывод в io.Writer без форматирования
+2. **fmt.Fprintln** — вывод с переводом строки
+3. **fmt.Fprintf** — форматированный вывод с спецификаторами
+4. **Универсальность** — работают с любым io.Writer (файл, сеть, буфер)
+5. **Спецификаторы** — %s, %d, %f, %v и другие
+</Overview>
+
+<Theory>
+### Три версии функций вывода
+
+| Функция | Куда пишет | Что делает |
+|---------|------------|------------|
+| `Print` | stdout | Без форматирования |
+| `Sprint` | Возвращает string | Без IO |
+| `Fprint` | io.Writer | В любой поток |
+
+То же для `Println`, `Printf`.
+
+### Почему Fprint важен?
+
+`Fprint*` работают с **любым** io.Writer:
+
+```go
+// В консоль
+fmt.Fprintln(os.Stdout, "Hello")
+
+// В файл
+fmt.Fprintf(file, "Count: %d\n", 42)
+
+// В сеть
+fmt.Fprintln(conn, "GET / HTTP/1.0")
+
+// В буфер
+var buf bytes.Buffer
+fmt.Fprintf(&buf, "Result: %v", result)
+```
+
+### Основные спецификаторы
+
+**Общие:**
+```go
+%v   // "естественный" формат
+%+v  // структура с именами полей
+%#v  // Go-синтаксис (для отладки)
+%T   // тип значения
+%%   // знак процента
+```
+
+**Числа:**
+```go
+%d   // десятичное
+%b   // двоичное
+%o   // восьмеричное  
+%x   // шестнадцатеричное (a-f)
+%X   // шестнадцатеричное (A-F)
+%f   // float (123.456)
+%e   // экспоненциальная (1.23e+02)
+%g   // компактная форма
+```
+
+**Строки:**
+```go
+%s   // строка
+%q   // "в кавычках с экранированием"
+%c   // символ (руна)
+```
+
+### Ширина и точность
+
+```go
+%5d      // минимум 5 символов, справа
+%-5d     // минимум 5 символов, слева
+%05d     // 5 символов, заполнить нулями
+%.2f     // 2 знака после точки
+%8.2f    // ширина 8, точность 2
+%*d      // ширина из аргумента
+```
+
+**Примеры:**
+```go
+fmt.Printf("|%5d|", 42)    // |   42|
+fmt.Printf("|%-5d|", 42)   // |42   |
+fmt.Printf("|%05d|", 42)   // |00042|
+fmt.Printf("|%.2f|", 3.14159) // |3.14|
+```
+
+### Для отладки
+
+```go
+type User struct {
+    Name string
+    Age  int
+}
+
+u := User{"John", 30}
+
+fmt.Printf("%v\n", u)   // {John 30}
+fmt.Printf("%+v\n", u)  // {Name:John Age:30}
+fmt.Printf("%#v\n", u)  // main.User{Name:"John", Age:30}
+fmt.Printf("%T\n", u)   // main.User
+```
+</Theory>
+
+<Syntax>
+### Функции вывода
+
+```go
+// Без форматирования
+fmt.Fprint(w io.Writer, a ...interface{}) (n int, err error)
+
+// С переводом строки
+fmt.Fprintln(w io.Writer, a ...interface{}) (n int, err error)
+
+// С форматированием
+fmt.Fprintf(w io.Writer, format string, a ...interface{}) (n int, err error)
+```
+
+### Основные спецификаторы
+
+```go
+%v   // значение в формате по умолчанию
+%+v  // структура с именами полей
+%#v  // Go-синтаксис представления
+%T   // тип значения
+%d   // целое число
+%f   // число с плавающей точкой
+%s   // строка
+%q   // строка в кавычках
+%t   // boolean
+%p   // указатель
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Запись в файл с Fprint/Fprintln
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Create("output.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    // Fprint — без перевода строки
+    fmt.Fprint(file, "Hello")
+    fmt.Fprint(file, " ")
+    fmt.Fprint(file, "World")
+    
+    // Fprintln — с переводом строки
+    fmt.Fprintln(file)  // пустая строка
+    fmt.Fprintln(file, "Second line")
+    fmt.Fprintln(file, "Third", "line", "here")
+    
+    fmt.Println("File written!")
+}
+```
+
+### Форматированный вывод Fprintf
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+type Product struct {
+    Name  string
+    Price float64
+    Qty   int
+}
+
+func main() {
+    file, err := os.Create("products.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    products := []Product{
+        {"Apple", 1.50, 100},
+        {"Banana", 0.75, 150},
+        {"Orange", 2.00, 80},
+    }
+    
+    // Заголовок
+    fmt.Fprintf(file, "%-15s %10s %8s\n", "Product", "Price", "Qty")
+    fmt.Fprintf(file, "%s\n", "------------------------------------")
+    
+    // Данные
+    for _, p := range products {
+        fmt.Fprintf(file, "%-15s %10.2f %8d\n", p.Name, p.Price, p.Qty)
+    }
+    
+    fmt.Println("Report saved!")
+}
+```
+
+### Форматирование чисел
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Вывод в stdout
+    w := os.Stdout
+    
+    num := 42
+    pi := 3.14159265359
+    
+    // Целые числа
+    fmt.Fprintf(w, "Decimal: %d\n", num)
+    fmt.Fprintf(w, "Binary: %b\n", num)
+    fmt.Fprintf(w, "Octal: %o\n", num)
+    fmt.Fprintf(w, "Hex: %x (lower), %X (upper)\n", num, num)
+    fmt.Fprintf(w, "With padding: %05d\n", num)
+    
+    // Числа с плавающей точкой
+    fmt.Fprintf(w, "\nFloat: %f\n", pi)
+    fmt.Fprintf(w, "Precision .2: %.2f\n", pi)
+    fmt.Fprintf(w, "Precision .5: %.5f\n", pi)
+    fmt.Fprintf(w, "Width 10.2: %10.2f\n", pi)
+    fmt.Fprintf(w, "Scientific: %e\n", pi)
+    fmt.Fprintf(w, "Compact: %g\n", pi)
+}
+```
+
+### Форматирование строк
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    w := os.Stdout
+    
+    name := "Go"
+    
+    fmt.Fprintf(w, "String: %s\n", name)
+    fmt.Fprintf(w, "Quoted: %q\n", name)
+    fmt.Fprintf(w, "Width 10: |%10s|\n", name)
+    fmt.Fprintf(w, "Left align: |%-10s|\n", name)
+    fmt.Fprintf(w, "Hex bytes: %x\n", name)
+    
+    // Unicode
+    emoji := "🎉"
+    fmt.Fprintf(w, "\nEmoji: %s\n", emoji)
+    fmt.Fprintf(w, "Unicode: %+q\n", emoji)
+}
+```
+
+### Форматирование структур
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+type Person struct {
+    Name string
+    Age  int
+    City string
+}
+
+func main() {
+    p := Person{"Alice", 30, "Moscow"}
+    
+    w := os.Stdout
+    
+    fmt.Fprintf(w, "Default %%v: %v\n", p)
+    fmt.Fprintf(w, "With fields %%+v: %+v\n", p)
+    fmt.Fprintf(w, "Go syntax %%#v: %#v\n", p)
+    fmt.Fprintf(w, "Type %%T: %T\n", p)
+}
+// Output:
+// Default %v: {Alice 30 Moscow}
+// With fields %+v: {Name:Alice Age:30 City:Moscow}
+// Go syntax %#v: main.Person{Name:"Alice", Age:30, City:"Moscow"}
+// Type %T: main.Person
+```
+
+### Вывод в буфер
+
+```go
+package main
+
+import (
+    "bytes"
+    "fmt"
+)
+
+func main() {
+    var buf bytes.Buffer
+    
+    fmt.Fprintf(&buf, "Name: %s\n", "Alice")
+    fmt.Fprintf(&buf, "Age: %d\n", 30)
+    fmt.Fprintf(&buf, "Score: %.2f\n", 95.5)
+    
+    // Получаем строку из буфера
+    result := buf.String()
+    fmt.Println("Buffer content:")
+    fmt.Println(result)
+}
+```
+
+### Создание форматированной строки
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    name := "Bob"
+    age := 25
+    
+    // Sprintf возвращает строку вместо записи
+    message := fmt.Sprintf("User %s is %d years old", name, age)
+    fmt.Println(message)
+    
+    // Полезно для создания сообщений об ошибках
+    err := fmt.Errorf("user %s not found (id: %d)", name, 123)
+    fmt.Println(err)
+}
+```
+
+### Практический пример: генерация HTML
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+type Article struct {
+    Title   string
+    Content string
+    Author  string
+}
+
+func generateHTML(w *os.File, article Article) {
+    fmt.Fprintln(w, "<!DOCTYPE html>")
+    fmt.Fprintln(w, "<html>")
+    fmt.Fprintln(w, "<head>")
+    fmt.Fprintf(w, "    <title>%s</title>\n", article.Title)
+    fmt.Fprintln(w, "</head>")
+    fmt.Fprintln(w, "<body>")
+    fmt.Fprintf(w, "    <h1>%s</h1>\n", article.Title)
+    fmt.Fprintf(w, "    <p>%s</p>\n", article.Content)
+    fmt.Fprintf(w, "    <footer>By %s</footer>\n", article.Author)
+    fmt.Fprintln(w, "</body>")
+    fmt.Fprintln(w, "</html>")
+}
+
+func main() {
+    article := Article{
+        Title:   "Hello Go",
+        Content: "Go is a great language!",
+        Author:  "Gopher",
+    }
+    
+    file, _ := os.Create("article.html")
+    defer file.Close()
+    
+    generateHTML(file, article)
+    fmt.Println("HTML generated!")
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Несоответствие типов
+
+```go
+// ❌ Неверный спецификатор
+fmt.Fprintf(w, "Number: %s\n", 42)  // 42 — не строка!
+
+// ✅ Правильный спецификатор
+fmt.Fprintf(w, "Number: %d\n", 42)
+```
+
+### 2. Несоответствие количества аргументов
+
+```go
+// ❌ Не хватает аргументов
+fmt.Fprintf(w, "Name: %s, Age: %d\n", "Alice")
+
+// ✅ Все аргументы на месте
+fmt.Fprintf(w, "Name: %s, Age: %d\n", "Alice", 30)
+```
+
+### 3. Игнорирование ошибки записи
+
+```go
+// ❌ Ошибка игнорируется
+fmt.Fprintf(file, "data")
+
+// ✅ Проверяем ошибку
+_, err := fmt.Fprintf(file, "data")
+if err != nil {
+    log.Println("Write error:", err)
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: ParseFiles</Title>
+<Prompt>
+Загрузите шаблон из файла.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Файлы: template.ParseFiles(\"t1.html\", \"t2.html\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Файлы: template.ParseFiles("t1.html", "t2.html")
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: ParseGlob</Title>
+<Prompt>
+Загрузите шаблоны по паттерну.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Glob: template.ParseGlob(\"templates/*.html\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Glob: template.ParseGlob("templates/*.html")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Must</Title>
+<Prompt>
+Используйте Must для обработки ошибок.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Must: template.Must(template.ParseFiles(...))")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Must: template.Must(template.ParseFiles(...))
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: ExecuteTemplate</Title>
+<Prompt>
+Выполните конкретный шаблон из набора.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("ExecuteTemplate: t.ExecuteTemplate(w, \"name\", data)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+ExecuteTemplate: t.ExecuteTemplate(w, "name", data)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Funcs</Title>
+<Prompt>
+Добавьте функции в шаблон.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Funcs: template.New(\"\").Funcs(funcMap)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Funcs: template.New("").Funcs(funcMap)
+</ExpectedOutput>
+</Task>

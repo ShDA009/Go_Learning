@@ -1,0 +1,639 @@
+# Закрытие канала (Close)
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **close(ch)** — закрывает канал, сигнализируя о конце передачи
+2. **Отправка в закрытый** — вызывает panic
+3. **Чтение из закрытого** — возвращает нулевое значение + false
+4. **for-range** — автоматически завершается при закрытии канала
+5. **Отправитель закрывает** — получатель НЕ должен закрывать канал
+6. **Нельзя закрыть дважды** — вызывает panic
+</Overview>
+
+<Theory>
+### Зачем закрывать каналы?
+
+Канал — это труба для данных. Закрытие говорит: "данных больше не будет". Это важно для:
+
+1. **Сигнализации** — получатель узнаёт, что работа завершена
+2. **Завершения циклов** — `for range` автоматически выходит
+3. **Освобождения ресурсов** — горутины могут завершиться
+
+### Как закрыть канал
+
+```go
+ch := make(chan int)
+close(ch)  // Теперь канал закрыт
+```
+
+### Что происходит после закрытия?
+
+| Операция | Результат |
+|----------|-----------|
+| Отправка `ch <- x` | **panic!** |
+| Чтение `<-ch` | Возвращает нулевое значение |
+| Повторное закрытие | **panic!** |
+
+### Проверка: закрыт ли канал?
+
+```go
+value, ok := <-ch
+if !ok {
+    fmt.Println("Канал закрыт")
+}
+```
+
+### for range — лучший способ чтения
+
+```go
+// Читаем все значения до закрытия
+for value := range ch {
+    process(value)
+}
+fmt.Println("Канал закрыт, цикл завершён")
+```
+
+### Правило: закрывает отправитель
+
+**Только тот, кто отправляет, должен закрывать:**
+
+```go
+func producer(ch chan<- int) {
+    for i := 0; i < 10; i++ {
+        ch <- i
+    }
+    close(ch)  // Производитель закрывает
+}
+
+func consumer(ch <-chan int) {
+    for v := range ch {
+        fmt.Println(v)
+    }
+    // НЕ закрываем! Мы только читаем
+}
+```
+
+**Почему?** Получатель не знает, сколько отправителей и закончили ли они.
+
+### Паттерн: несколько производителей
+
+Когда несколько горутин отправляют в один канал:
+
+```go
+func main() {
+    ch := make(chan int)
+    var wg sync.WaitGroup
+    
+    // Несколько производителей
+    for i := 0; i < 3; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            ch <- id
+        }(i)
+    }
+    
+    // Отдельная горутина для закрытия
+    go func() {
+        wg.Wait()  // Ждём всех производителей
+        close(ch)  // Закрываем один раз!
+    }()
+    
+    for v := range ch {
+        fmt.Println(v)
+    }
+}
+```
+
+### Нужно ли всегда закрывать?
+
+**Не обязательно!** Каналы автоматически собираются GC.
+
+Закрывайте когда:
+- Получатель ждёт сигнала завершения
+- Используете `for range`
+- Хотите разблокировать ожидающих
+</Theory>
+
+<Syntax>
+### Закрытие канала
+
+```go
+close(ch)  // закрыть канал
+```
+
+### Проверка состояния канала
+
+```go
+value, ok := <-ch
+// ok == true  — канал открыт, value содержит данные
+// ok == false — канал закрыт, value = нулевое значение
+```
+
+### Итерация до закрытия
+
+```go
+for value := range ch {
+    // обрабатываем value
+}
+// выход из цикла когда канал закрыт
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовое закрытие канала
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan int, 3)
+    
+    ch <- 1
+    ch <- 2
+    ch <- 3
+    
+    close(ch)  // закрываем канал
+    
+    // Читаем все значения
+    fmt.Println(<-ch)  // 1
+    fmt.Println(<-ch)  // 2
+    fmt.Println(<-ch)  // 3
+    
+    // Дополнительное чтение из закрытого канала
+    val, ok := <-ch
+    fmt.Printf("value: %d, ok: %v\n", val, ok)  // value: 0, ok: false
+}
+```
+
+### Проверка состояния канала
+
+```go
+package main
+
+import "fmt"
+
+func sender(ch chan int) {
+    for i := 1; i <= 3; i++ {
+        ch <- i
+    }
+    close(ch)
+}
+
+func main() {
+    ch := make(chan int)
+    
+    go sender(ch)
+    
+    for {
+        value, ok := <-ch
+        if !ok {
+            fmt.Println("Channel closed!")
+            break
+        }
+        fmt.Printf("Received: %d\n", value)
+    }
+}
+```
+
+### for-range по каналу
+
+```go
+package main
+
+import "fmt"
+
+func numbers(ch chan int) {
+    for i := 1; i <= 5; i++ {
+        ch <- i
+    }
+    close(ch)  // ВАЖНО: закрыть канал!
+}
+
+func main() {
+    ch := make(chan int)
+    
+    go numbers(ch)
+    
+    // range автоматически завершится при закрытии
+    for num := range ch {
+        fmt.Println("Number:", num)
+    }
+    
+    fmt.Println("Done!")
+}
+```
+
+### Отправитель закрывает канал (паттерн)
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+// Генератор (владеет каналом и закрывает его)
+func fibonacci(n int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        defer close(ch)  // закрываем при выходе
+        
+        a, b := 0, 1
+        for i := 0; i < n; i++ {
+            ch <- a
+            a, b = b, a+b
+        }
+    }()
+    
+    return ch
+}
+
+func main() {
+    for num := range fibonacci(10) {
+        fmt.Println(num)
+    }
+}
+```
+
+### Сигнальный канал (done channel)
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(done chan struct{}) {
+    fmt.Println("Working...")
+    time.Sleep(2 * time.Second)
+    fmt.Println("Work complete!")
+    close(done)  // сигнализируем о завершении
+}
+
+func main() {
+    done := make(chan struct{})
+    
+    go worker(done)
+    
+    <-done  // ждём закрытия канала
+    fmt.Println("Worker finished!")
+}
+```
+
+### Множество получателей
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func consumer(id int, ch <-chan int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    for num := range ch {
+        fmt.Printf("Consumer %d: %d\n", id, num)
+    }
+    fmt.Printf("Consumer %d: channel closed\n", id)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    ch := make(chan int)
+    
+    // Запускаем 3 потребителя
+    for i := 1; i <= 3; i++ {
+        wg.Add(1)
+        go consumer(i, ch, &wg)
+    }
+    
+    // Отправляем данные
+    for i := 1; i <= 9; i++ {
+        ch <- i
+    }
+    
+    close(ch)  // все потребители получат сигнал
+    
+    wg.Wait()
+    fmt.Println("All consumers done!")
+}
+```
+
+### Отмена через закрытие канала
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(id int, cancel <-chan struct{}) {
+    for {
+        select {
+        case <-cancel:
+            fmt.Printf("Worker %d: cancelled\n", id)
+            return
+        default:
+            fmt.Printf("Worker %d: working...\n", id)
+            time.Sleep(500 * time.Millisecond)
+        }
+    }
+}
+
+func main() {
+    cancel := make(chan struct{})
+    
+    // Запускаем воркеров
+    for i := 1; i <= 3; i++ {
+        go worker(i, cancel)
+    }
+    
+    time.Sleep(2 * time.Second)
+    
+    // Отменяем всех одним закрытием
+    close(cancel)
+    
+    time.Sleep(time.Second)
+    fmt.Println("All workers cancelled!")
+}
+```
+
+### Безопасное закрытие (sync.Once)
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+type SafeChannel struct {
+    ch   chan int
+    once sync.Once
+}
+
+func (s *SafeChannel) Close() {
+    s.once.Do(func() {
+        close(s.ch)
+    })
+}
+
+func main() {
+    safe := SafeChannel{ch: make(chan int, 1)}
+    safe.ch <- 42
+    
+    // Безопасно — можно вызвать несколько раз
+    safe.Close()
+    safe.Close()  // не вызовет panic
+    
+    val, ok := <-safe.ch
+    fmt.Printf("value: %d, ok: %v\n", val, ok)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Запись в закрытый канал
+
+```go
+ch := make(chan int)
+close(ch)
+
+// ❌ PANIC: send on closed channel
+ch <- 42
+
+// ✅ Проверяйте перед отправкой или не закрывайте преждевременно
+```
+
+### 2. Закрытие канала дважды
+
+```go
+ch := make(chan int)
+close(ch)
+
+// ❌ PANIC: close of closed channel
+close(ch)
+
+// ✅ Используйте sync.Once для безопасного закрытия
+```
+
+### 3. Получатель закрывает канал
+
+```go
+// ❌ ПЛОХО — получатель закрывает
+func consumer(ch chan int) {
+    for v := range ch {
+        fmt.Println(v)
+    }
+    close(ch)  // ❌ Отправитель может ещё слать данные!
+}
+
+// ✅ ХОРОШО — отправитель закрывает
+func producer(ch chan int) {
+    for i := 0; i < 5; i++ {
+        ch <- i
+    }
+    close(ch)  // ✅ Владелец закрывает
+}
+```
+
+### 4. Забыли закрыть канал
+
+```go
+func gen() <-chan int {
+    ch := make(chan int)
+    go func() {
+        ch <- 1
+        ch <- 2
+        // ❌ Забыли close(ch)
+    }()
+    return ch
+}
+
+// range будет ждать вечно
+for v := range gen() {
+    fmt.Println(v)  // зависнет после 2
+}
+```
+
+### 5. Закрытие nil канала
+
+```go
+var ch chan int  // nil
+
+// ❌ PANIC: close of nil channel
+close(ch)
+
+// ✅ Инициализируйте канал
+ch = make(chan int)
+close(ch)  // OK
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: go test базовый</Title>
+<Prompt>
+Напишите простой тест для функции Add.
+</Prompt>
+<Hints>
+- import "testing"
+- if got != want { t.Errorf(...) }
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "testing"
+)
+
+// TODO: Напишите тест
+// TODO: Обработайте ошибки
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+--- PASS: TestAdd
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Table-driven тесты</Title>
+<Prompt>
+Напишите тесты с таблицей случаев.
+</Prompt>
+<Hints>
+- cases := []struct{...}{...}
+- t.Run(name, func(t *testing.T){...})
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Определите структуру
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Все тесты пройдены
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: t.Fatal vs t.Error</Title>
+<Prompt>
+Покажите разницу между Fatal и Error.
+</Prompt>
+<Hints>
+- Error для проверок
+- Fatal для критических ошибок
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Error: тест продолжается")
+    fmt.Println("Fatal: тест останавливается")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Error: тест продолжается
+Fatal: тест останавливается
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Benchmark</Title>
+<Prompt>
+Напишите бенчмарк для функции.
+</Prompt>
+<Hints>
+- for i := 0; i < b.N; i++ {...}
+- go test -bench=.
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func Fib(n int) int {
+    if n < 2 {
+        return n
+    }
+    return Fib(n-1) + Fib(n-2)
+}
+
+// BenchmarkFib(b *testing.B)
+// for i := 0; i < b.N; i++ { Fib(10) }
+
+func main() {
+    fmt.Println("Benchmark готов к запуску")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Benchmark готов к запуску
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: testify assert</Title>
+<Prompt>
+Используйте assert из testify.
+</Prompt>
+<Hints>
+- go get github.com/stretchr/testify
+- assert.NoError, assert.True, ...
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// import "github.com/stretchr/testify/assert"
+// assert.Equal(t, 5, Add(2, 3))
+
+func main() {
+    fmt.Println("Assert: более читаемые проверки")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Assert: более читаемые проверки
+</ExpectedOutput>
+</Task>

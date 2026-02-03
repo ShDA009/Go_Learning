@@ -1,0 +1,185 @@
+# OpenTelemetry Tracing в Go
+
+<Meta>
+reading_time: 12
+</Meta>
+
+<Overview>
+1. **Traces** показывают путь запроса через систему (service → service → DB/HTTP)
+2. **Span** — шаг внутри трейса: операция + время + атрибуты + ошибки
+3. В Go всё держится на **context propagation**: без `ctx` трассировка ломается
+4. OpenTelemetry обычно экспортирует данные через **OTLP** в Collector → Jaeger/Tempo
+5. В проде важны: **sampling**, контроль кардинальности атрибутов и корректный shutdown
+</Overview>
+
+<Theory>
+### Что такое trace/span
+
+- **Trace**: “транзакция”/запрос пользователя сквозь систему
+- **Span**: одна операция внутри trace (например, “HTTP GET /users”, “SQL SELECT users”, “call payment-service”)
+
+Span содержит:
+- время начала/конца, длительность
+- атрибуты (key/value)
+- статус (OK/ERROR) и ошибки
+- связи родитель/потомок
+
+### Зачем tracing в backend проектах
+
+Tracing помогает:
+- быстро найти, где пропадает время (API, DB, внешние вызовы)
+- разбирать p99 проблемы (вместо “у всех медленно”)
+- кореллировать события: metrics ↔ logs ↔ traces
+
+### Важное правило
+
+**Context должен проходить через все слои**: handler → service → repo → http/grpc/sql.
+Если где-то вместо `ctx` вы используете `context.Background()`, вы “обрубаете” цепочку трейса.
+</Theory>
+
+<Syntax>
+### Минимальные шаги подключения tracing
+
+1) Инициализировать TracerProvider + Exporter (обычно OTLP)  
+2) Установить глобальный провагатор (`TraceContext`)  
+3) Инструментировать входящие/исходящие вызовы (HTTP/gRPC/DB)  
+4) Добавить свои spans вокруг бизнес‑операций
+
+### Полезные библиотеки (экосистема)
+
+- `otelhttp` — net/http middleware и client transport
+- `otelgrpc` — gRPC interceptors
+- `otelgin` — middleware для Gin
+
+### Ручной span (когда нужно добавить бизнес‑контекст)
+
+```go
+tr := otel.Tracer("myapp")
+ctx, span := tr.Start(ctx, "CreateOrder")
+defer span.End()
+
+span.SetAttributes(attribute.String("order_id", id))
+span.RecordError(err)
+```
+</Syntax>
+
+<Examples>
+### Пример: базовая инициализация OTLP exporter (концепт)
+
+Ниже — типовая “болванка” для реального проекта. В учебных заданиях можно оставить это как ориентир.
+
+```go
+package telemetry
+
+import (
+	"context"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+)
+
+func Init(ctx context.Context, serviceName string) (shutdown func(context.Context) error, err error) {
+	exp, err := otlptracegrpc.New(ctx) // по умолчанию OTLP endpoint берётся из env
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(semconv.ServiceNameKey.String(serviceName)),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	return tp.Shutdown, nil
+}
+```
+
+### Пример: docker-compose для local‑наблюдаемости (Collector + Jaeger)
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686" # UI
+```
+</Examples>
+
+<Pitfalls>
+1. **Нет shutdown**: буферы не сбрасываются, трейсы теряются при остановке
+2. **Слишком много атрибутов**: “взрывает” хранение и делает поиск дорогим
+3. **Высокая кардинальность**: не добавляйте в атрибуты email/uuid на каждый запрос без необходимости
+4. **Непроброшенный ctx**: один `context.Background()` ломает дерево span’ов
+5. **Сэмплирование**: в проде почти всегда нужно (иначе будет слишком много данных)
+</Pitfalls>
+
+<Links>
+- `https://opentelemetry.io/docs/`
+- `https://opentelemetry.io/docs/languages/go/`
+- `https://github.com/open-telemetry/opentelemetry-go`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Где в проекте должны появиться spans?</Title>
+<Prompt>
+Составьте список мест для tracing в capstone REST проекте: входящий HTTP, исходящие HTTP/gRPC, SQL запросы, бизнес‑операции. Для каждого пункта — что будет названием span и какие атрибуты важны.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("spans: http in/out, db, business ops + attrs")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+spans: http in/out, db, business ops + attrs
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Инициализация OTel + graceful shutdown</Title>
+<Prompt>
+Добавьте инициализацию OpenTelemetry Tracing (OTLP exporter) и корректный shutdown при SIGTERM/SIGINT. Убедитесь, что трейсы не теряются при остановке.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("otel init + shutdown on signal")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+otel init + shutdown on signal
+</ExpectedOutput>
+</Task>
+

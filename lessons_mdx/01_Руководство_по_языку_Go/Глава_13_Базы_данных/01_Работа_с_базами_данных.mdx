@@ -1,0 +1,707 @@
+# Работа с реляционными базами данных (database/sql)
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **database/sql** — универсальный пакет для работы с SQL БД
+2. **Драйверы** — конкретная реализация для каждой СУБД
+3. **sql.Open** — открытие соединения с БД
+4. **sql.DB** — пул соединений (connection pool)
+5. **Exec, Query, QueryRow** — основные методы для запросов
+</Overview>
+
+<Theory>
+### Как Go работает с базами данных?
+
+```
+Ваш код → database/sql → Драйвер → СУБД
+```
+
+**database/sql** — универсальный интерфейс для любой SQL базы данных. **Драйвер** — конкретная реализация для MySQL, PostgreSQL и т.д.
+
+### Что такое sql.DB?
+
+`sql.DB` — это **пул соединений**, не одно соединение:
+
+```go
+db, _ := sql.Open("mysql", dsn)
+// db — пул, готов обрабатывать множество запросов
+```
+
+**Преимущества пула:**
+- Переиспользование соединений
+- Автоматическое управление
+- Масштабируемость
+
+### sql.Open НЕ подключается!
+
+`sql.Open` только создаёт пул, не проверяя соединение:
+
+```go
+db, err := sql.Open("mysql", dsn)  // err может быть nil!
+// Соединение ещё не проверено
+
+err = db.Ping()  // Вот теперь реальная проверка!
+if err != nil {
+    log.Fatal("Cannot connect to DB:", err)
+}
+```
+
+### Три метода для запросов
+
+| Метод | Когда использовать | Возвращает |
+|-------|-------------------|------------|
+| `Exec` | INSERT, UPDATE, DELETE | Result |
+| `Query` | SELECT с множеством строк | *Rows |
+| `QueryRow` | SELECT одной строки | *Row |
+
+### Плейсхолдеры и SQL-инъекции
+
+```go
+// ОПАСНО — SQL-инъекция!
+db.Query("SELECT * FROM users WHERE name = '" + name + "'")
+
+// БЕЗОПАСНО — плейсхолдеры
+db.Query("SELECT * FROM users WHERE name = ?", name)
+```
+
+**Плейсхолдеры зависят от драйвера:**
+- MySQL: `?`
+- PostgreSQL: `$1, $2, $3`
+- SQLite: `?` или `$1`
+
+### Чтение результатов
+
+```go
+rows, err := db.Query("SELECT id, name FROM users")
+if err != nil {
+    return err
+}
+defer rows.Close()  // ОБЯЗАТЕЛЬНО!
+
+for rows.Next() {
+    var id int
+    var name string
+    err := rows.Scan(&id, &name)
+    if err != nil {
+        return err
+    }
+    fmt.Println(id, name)
+}
+
+// Проверка ошибок после цикла
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+### Одна строка
+
+```go
+var name string
+err := db.QueryRow("SELECT name FROM users WHERE id = ?", 1).Scan(&name)
+if err == sql.ErrNoRows {
+    // Запись не найдена
+} else if err != nil {
+    // Другая ошибка
+}
+```
+
+### Транзакции
+
+```go
+tx, err := db.Begin()
+if err != nil {
+    return err
+}
+defer tx.Rollback()  // Откат если не commit
+
+tx.Exec("INSERT INTO orders ...")
+tx.Exec("UPDATE inventory ...")
+
+err = tx.Commit()  // Подтверждаем
+```
+</Theory>
+
+<Syntax>
+### Открытие соединения
+
+```go
+db, err := sql.Open(driverName, dataSourceName)
+defer db.Close()
+```
+
+### Основные методы sql.DB
+
+```go
+// Выполнение без результата (INSERT, UPDATE, DELETE)
+db.Exec(query string, args ...interface{}) (Result, error)
+
+// Запрос с множеством строк (SELECT)
+db.Query(query string, args ...interface{}) (*Rows, error)
+
+// Запрос с одной строкой
+db.QueryRow(query string, args ...interface{}) *Row
+
+// Проверка соединения
+db.Ping() error
+
+// Закрытие
+db.Close() error
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Подключение к базе данных
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"  // MySQL драйвер
+)
+
+func main() {
+    // Формат: user:password@tcp(host:port)/dbname
+    dsn := "root:password@tcp(localhost:3306)/mydb"
+    
+    db, err := sql.Open("mysql", dsn)
+    if err != nil {
+        log.Fatal("Open error:", err)
+    }
+    defer db.Close()
+    
+    // Проверяем соединение
+    err = db.Ping()
+    if err != nil {
+        log.Fatal("Ping error:", err)
+    }
+    
+    fmt.Println("Connected to database!")
+}
+```
+
+### Создание таблицы
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, err := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+    
+    // Создаём таблицу
+    query := `
+        CREATE TABLE IF NOT EXISTS products (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            price DECIMAL(10,2) NOT NULL,
+            quantity INT DEFAULT 0
+        )
+    `
+    
+    _, err = db.Exec(query)
+    if err != nil {
+        log.Fatal("Create table error:", err)
+    }
+    
+    fmt.Println("Table created!")
+}
+```
+
+### INSERT — добавление данных
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    // Добавление с параметрами (защита от SQL injection)
+    result, err := db.Exec(
+        "INSERT INTO products (name, price, quantity) VALUES (?, ?, ?)",
+        "iPhone 15", 999.99, 100,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Получаем ID вставленной записи
+    lastID, _ := result.LastInsertId()
+    fmt.Println("Inserted ID:", lastID)
+    
+    // Количество затронутых строк
+    rows, _ := result.RowsAffected()
+    fmt.Println("Rows affected:", rows)
+}
+```
+
+### SELECT — получение данных
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID       int
+    Name     string
+    Price    float64
+    Quantity int
+}
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    // Запрос всех записей
+    rows, err := db.Query("SELECT id, name, price, quantity FROM products")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer rows.Close()
+    
+    var products []Product
+    
+    for rows.Next() {
+        var p Product
+        err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Quantity)
+        if err != nil {
+            log.Println("Scan error:", err)
+            continue
+        }
+        products = append(products, p)
+    }
+    
+    // Проверяем ошибки итерации
+    if err = rows.Err(); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Выводим результаты
+    for _, p := range products {
+        fmt.Printf("%d: %s - $%.2f (qty: %d)\n", 
+            p.ID, p.Name, p.Price, p.Quantity)
+    }
+}
+```
+
+### QueryRow — получение одной записи
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+type Product struct {
+    ID       int
+    Name     string
+    Price    float64
+    Quantity int
+}
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    var p Product
+    
+    err := db.QueryRow(
+        "SELECT id, name, price, quantity FROM products WHERE id = ?", 1,
+    ).Scan(&p.ID, &p.Name, &p.Price, &p.Quantity)
+    
+    if err == sql.ErrNoRows {
+        fmt.Println("Product not found")
+        return
+    }
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Product: %+v\n", p)
+}
+```
+
+### UPDATE — обновление
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    result, err := db.Exec(
+        "UPDATE products SET price = ?, quantity = ? WHERE id = ?",
+        899.99, 150, 1,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    rows, _ := result.RowsAffected()
+    fmt.Printf("Updated %d rows\n", rows)
+}
+```
+
+### DELETE — удаление
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    result, err := db.Exec("DELETE FROM products WHERE id = ?", 5)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    rows, _ := result.RowsAffected()
+    fmt.Printf("Deleted %d rows\n", rows)
+}
+```
+
+### Prepared Statements
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    // Подготавливаем запрос
+    stmt, err := db.Prepare("INSERT INTO products (name, price) VALUES (?, ?)")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer stmt.Close()
+    
+    // Используем многократно
+    products := []struct {
+        Name  string
+        Price float64
+    }{
+        {"MacBook Pro", 2499.99},
+        {"iPad Pro", 1099.99},
+        {"AirPods", 249.99},
+    }
+    
+    for _, p := range products {
+        result, err := stmt.Exec(p.Name, p.Price)
+        if err != nil {
+            log.Println("Insert error:", err)
+            continue
+        }
+        id, _ := result.LastInsertId()
+        fmt.Printf("Inserted %s with ID %d\n", p.Name, id)
+    }
+}
+```
+
+### Транзакции
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    // Начинаем транзакцию
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Выполняем операции
+    _, err = tx.Exec("UPDATE accounts SET balance = balance - 100 WHERE id = 1")
+    if err != nil {
+        tx.Rollback()
+        log.Fatal("Debit failed:", err)
+    }
+    
+    _, err = tx.Exec("UPDATE accounts SET balance = balance + 100 WHERE id = 2")
+    if err != nil {
+        tx.Rollback()
+        log.Fatal("Credit failed:", err)
+    }
+    
+    // Фиксируем транзакцию
+    err = tx.Commit()
+    if err != nil {
+        log.Fatal("Commit failed:", err)
+    }
+    
+    fmt.Println("Transaction completed!")
+}
+```
+
+### Настройка пула соединений
+
+```go
+package main
+
+import (
+    "database/sql"
+    "time"
+    
+    _ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+    db, _ := sql.Open("mysql", "root:password@tcp(localhost:3306)/mydb")
+    defer db.Close()
+    
+    // Настройка пула
+    db.SetMaxOpenConns(25)                  // макс. открытых соединений
+    db.SetMaxIdleConns(5)                   // макс. idle соединений
+    db.SetConnMaxLifetime(5 * time.Minute)  // время жизни соединения
+    db.SetConnMaxIdleTime(1 * time.Minute)  // макс. время idle
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Не закрывают rows
+
+```go
+// ❌ Утечка соединений!
+rows, _ := db.Query("SELECT * FROM products")
+for rows.Next() {
+    // ...
+}
+// rows не закрыт!
+
+// ✅ Всегда используйте defer
+rows, err := db.Query("SELECT * FROM products")
+if err != nil {
+    return err
+}
+defer rows.Close()
+```
+
+### 2. Не проверяют rows.Err()
+
+```go
+// ❌ Ошибка итерации теряется
+for rows.Next() {
+    rows.Scan(&data)
+}
+
+// ✅ Проверяйте после цикла
+for rows.Next() {
+    rows.Scan(&data)
+}
+if err := rows.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+### 3. SQL Injection
+
+```go
+// ❌ ОПАСНО!
+name := "'; DROP TABLE products; --"
+db.Query("SELECT * FROM products WHERE name = '" + name + "'")
+
+// ✅ Используйте параметры
+db.Query("SELECT * FROM products WHERE name = ?", name)
+```
+
+### 4. Не используют sql.ErrNoRows
+
+```go
+// ❌ Не различают "не найдено" и ошибку
+err := db.QueryRow(...).Scan(...)
+if err != nil {
+    log.Fatal(err)  // может быть просто пустой результат
+}
+
+// ✅ Проверяйте ErrNoRows
+if err == sql.ErrNoRows {
+    // запись не найдена - это нормально
+} else if err != nil {
+    log.Fatal(err)  // реальная ошибка
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: REST принципы</Title>
+<Prompt>
+Ресурсы и методы REST.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("REST: GET /users, POST /users, PUT /users/{id}, DELETE /users/{id}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+REST: GET /users, POST /users, PUT /users/{id}, DELETE /users/{id}
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: JSON API</Title>
+<Prompt>
+Создайте JSON endpoint.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("JSON API: w.Header().Set(\"Content-Type\", \"application/json\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+JSON API: w.Header().Set("Content-Type", "application/json")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: HTTP статусы</Title>
+<Prompt>
+Верните правильные статусы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Статусы: 200 OK, 201 Created, 400 Bad Request, 404 Not Found")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Статусы: 200 OK, 201 Created, 400 Bad Request, 404 Not Found
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Пагинация</Title>
+<Prompt>
+Добавьте пагинацию в API.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Пагинация: ?page=1&limit=10")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Пагинация: ?page=1&limit=10
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Обработка ошибок API</Title>
+<Prompt>
+Верните ошибки в JSON формате.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Ошибка: {\"error\": \"message\", \"code\": 400}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: {"error": "message", "code": 400}
+</ExpectedOutput>
+</Task>

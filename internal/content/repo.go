@@ -15,31 +15,81 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// --- Courses ---
+
+// CreateCourse создаёт или обновляет курс.
+func (r *Repository) CreateCourse(c *Course) error {
+	_, err := r.db.Exec(
+		`INSERT INTO courses (slug, title, description, icon, order_index) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(slug) DO UPDATE SET title = excluded.title, description = excluded.description, 
+		 icon = excluded.icon, order_index = excluded.order_index`,
+		c.Slug, c.Title, c.Description, c.Icon, c.OrderIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("insert course: %w", err)
+	}
+
+	err = r.db.QueryRow("SELECT id FROM courses WHERE slug = ?", c.Slug).Scan(&c.ID)
+	if err != nil {
+		return fmt.Errorf("get course id: %w", err)
+	}
+
+	return nil
+}
+
+// GetCourseBySlug возвращает курс по slug.
+func (r *Repository) GetCourseBySlug(slug string) (*Course, error) {
+	c := &Course{}
+	err := r.db.QueryRow(
+		`SELECT id, slug, title, description, icon, order_index FROM courses WHERE slug = ?`,
+		slug,
+	).Scan(&c.ID, &c.Slug, &c.Title, &c.Description, &c.Icon, &c.OrderIndex)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get course by slug: %w", err)
+	}
+	return c, nil
+}
+
+// ListCourses возвращает все курсы.
+func (r *Repository) ListCourses() ([]Course, error) {
+	rows, err := r.db.Query(`SELECT id, slug, title, description, icon, order_index FROM courses ORDER BY order_index`)
+	if err != nil {
+		return nil, fmt.Errorf("list courses: %w", err)
+	}
+	defer rows.Close()
+
+	var courses []Course
+	for rows.Next() {
+		var c Course
+		if err := rows.Scan(&c.ID, &c.Slug, &c.Title, &c.Description, &c.Icon, &c.OrderIndex); err != nil {
+			return nil, fmt.Errorf("scan course: %w", err)
+		}
+		courses = append(courses, c)
+	}
+
+	return courses, rows.Err()
+}
+
 // --- Modules ---
 
 // CreateModule создаёт новый модуль.
 func (r *Repository) CreateModule(m *Module) error {
-	result, err := r.db.Exec(
-		`INSERT INTO modules (slug, title, order_index) VALUES (?, ?, ?)
-		 ON CONFLICT(slug) DO UPDATE SET title = excluded.title, order_index = excluded.order_index`,
-		m.Slug, m.Title, m.OrderIndex,
+	_, err := r.db.Exec(
+		`INSERT INTO modules (slug, title, order_index, course_id) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(slug) DO UPDATE SET title = excluded.title, order_index = excluded.order_index, course_id = excluded.course_id`,
+		m.Slug, m.Title, m.OrderIndex, m.CourseID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert module: %w", err)
 	}
 
-	// Получаем ID (либо вставленный, либо существующий)
-	if m.ID == 0 {
-		id, _ := result.LastInsertId()
-		if id == 0 {
-			// Был UPDATE, получаем ID по slug
-			err = r.db.QueryRow("SELECT id FROM modules WHERE slug = ?", m.Slug).Scan(&m.ID)
-			if err != nil {
-				return fmt.Errorf("get module id: %w", err)
-			}
-		} else {
-			m.ID = id
-		}
+	// Всегда получаем ID по slug (надёжнее чем LastInsertId при ON CONFLICT)
+	err = r.db.QueryRow("SELECT id FROM modules WHERE slug = ?", m.Slug).Scan(&m.ID)
+	if err != nil {
+		return fmt.Errorf("get module id: %w", err)
 	}
 
 	return nil
@@ -48,22 +98,26 @@ func (r *Repository) CreateModule(m *Module) error {
 // GetModuleBySlug возвращает модуль по slug.
 func (r *Repository) GetModuleBySlug(slug string) (*Module, error) {
 	m := &Module{}
+	var courseID sql.NullInt64
 	err := r.db.QueryRow(
-		`SELECT id, slug, title, order_index FROM modules WHERE slug = ?`,
+		`SELECT id, slug, title, order_index, course_id FROM modules WHERE slug = ?`,
 		slug,
-	).Scan(&m.ID, &m.Slug, &m.Title, &m.OrderIndex)
+	).Scan(&m.ID, &m.Slug, &m.Title, &m.OrderIndex, &courseID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get module by slug: %w", err)
 	}
+	if courseID.Valid {
+		m.CourseID = courseID.Int64
+	}
 	return m, nil
 }
 
-// ListModules возвращает все модули с их уроками.
+// ListModules возвращает все модули.
 func (r *Repository) ListModules() ([]Module, error) {
-	rows, err := r.db.Query(`SELECT id, slug, title, order_index FROM modules ORDER BY order_index`)
+	rows, err := r.db.Query(`SELECT id, slug, title, order_index, COALESCE(course_id, 0) FROM modules ORDER BY order_index`)
 	if err != nil {
 		return nil, fmt.Errorf("list modules: %w", err)
 	}
@@ -72,7 +126,30 @@ func (r *Repository) ListModules() ([]Module, error) {
 	var modules []Module
 	for rows.Next() {
 		var m Module
-		if err := rows.Scan(&m.ID, &m.Slug, &m.Title, &m.OrderIndex); err != nil {
+		if err := rows.Scan(&m.ID, &m.Slug, &m.Title, &m.OrderIndex, &m.CourseID); err != nil {
+			return nil, fmt.Errorf("scan module: %w", err)
+		}
+		modules = append(modules, m)
+	}
+
+	return modules, rows.Err()
+}
+
+// ListModulesByCourseID возвращает модули для указанного курса.
+func (r *Repository) ListModulesByCourseID(courseID int64) ([]Module, error) {
+	rows, err := r.db.Query(
+		`SELECT id, slug, title, order_index, COALESCE(course_id, 0) FROM modules WHERE course_id = ? ORDER BY order_index`,
+		courseID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list modules by course: %w", err)
+	}
+	defer rows.Close()
+
+	var modules []Module
+	for rows.Next() {
+		var m Module
+		if err := rows.Scan(&m.ID, &m.Slug, &m.Title, &m.OrderIndex, &m.CourseID); err != nil {
 			return nil, fmt.Errorf("scan module: %w", err)
 		}
 		modules = append(modules, m)
@@ -85,7 +162,7 @@ func (r *Repository) ListModules() ([]Module, error) {
 
 // CreateLesson создаёт новый урок.
 func (r *Repository) CreateLesson(l *Lesson) error {
-	result, err := r.db.Exec(
+	_, err := r.db.Exec(
 		`INSERT INTO lessons (module_id, slug, title, order_index, source_url, body_md, reading_time_min)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(slug) DO UPDATE SET 
@@ -102,14 +179,10 @@ func (r *Repository) CreateLesson(l *Lesson) error {
 		return fmt.Errorf("insert lesson: %w", err)
 	}
 
-	id, _ := result.LastInsertId()
-	if id == 0 {
-		err = r.db.QueryRow("SELECT id FROM lessons WHERE slug = ?", l.Slug).Scan(&l.ID)
-		if err != nil {
-			return fmt.Errorf("get lesson id: %w", err)
-		}
-	} else {
-		l.ID = id
+	// Всегда получаем ID по slug (надёжнее чем LastInsertId при ON CONFLICT)
+	err = r.db.QueryRow("SELECT id FROM lessons WHERE slug = ?", l.Slug).Scan(&l.ID)
+	if err != nil {
+		return fmt.Errorf("get lesson id: %w", err)
 	}
 
 	return nil
@@ -213,7 +286,8 @@ func (r *Repository) ListAllLessons() ([]Lesson, error) {
 		`SELECT l.id, l.module_id, l.slug, l.title, l.order_index, l.source_url, l.body_md, 
 		        l.reading_time_min, l.created_at, l.updated_at
 		 FROM lessons l
-		 ORDER BY l.order_index`,
+		 JOIN modules m ON m.id = l.module_id
+		 ORDER BY m.order_index, l.order_index`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list all lessons: %w", err)
@@ -285,9 +359,9 @@ func (r *Repository) GetSectionsByLessonID(lessonID int64) ([]Section, error) {
 // CreateTask создаёт задание.
 func (r *Repository) CreateTask(t *Task) error {
 	result, err := r.db.Exec(
-		`INSERT INTO tasks (lesson_id, title, prompt_md, starter_code, tests_go, expected_output, required_patterns, points, order_index)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.LessonID, t.Title, t.PromptMD, t.StarterCode, t.TestsGo, t.ExpectedOutput, t.RequiredPatterns, t.Points, t.OrderIndex,
+		`INSERT INTO tasks (lesson_id, title, prompt_md, criteria, hints, starter_code, tests_go, expected_output, required_patterns, points, order_index)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.LessonID, t.Title, t.PromptMD, t.Criteria, t.Hints, t.StarterCode, t.TestsGo, t.ExpectedOutput, t.RequiredPatterns, t.Points, t.OrderIndex,
 	)
 	if err != nil {
 		return fmt.Errorf("insert task: %w", err)
@@ -306,7 +380,10 @@ func (r *Repository) DeleteTasksByLessonID(lessonID int64) error {
 // GetTasksByLessonID возвращает задания урока.
 func (r *Repository) GetTasksByLessonID(lessonID int64) ([]Task, error) {
 	rows, err := r.db.Query(
-		`SELECT id, lesson_id, title, prompt_md, starter_code, tests_go, 
+		`SELECT id, lesson_id, title, prompt_md, 
+		        COALESCE(criteria, '') as criteria,
+		        COALESCE(hints, '') as hints,
+		        starter_code, tests_go, 
 		        COALESCE(expected_output, '') as expected_output,
 		        COALESCE(required_patterns, '') as required_patterns,
 		        points, order_index
@@ -321,7 +398,7 @@ func (r *Repository) GetTasksByLessonID(lessonID int64) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		if err := rows.Scan(&t.ID, &t.LessonID, &t.Title, &t.PromptMD, &t.StarterCode, &t.TestsGo, &t.ExpectedOutput, &t.RequiredPatterns, &t.Points, &t.OrderIndex); err != nil {
+		if err := rows.Scan(&t.ID, &t.LessonID, &t.Title, &t.PromptMD, &t.Criteria, &t.Hints, &t.StarterCode, &t.TestsGo, &t.ExpectedOutput, &t.RequiredPatterns, &t.Points, &t.OrderIndex); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		tasks = append(tasks, t)
@@ -334,13 +411,16 @@ func (r *Repository) GetTasksByLessonID(lessonID int64) ([]Task, error) {
 func (r *Repository) GetTaskByID(id int64) (*Task, error) {
 	t := &Task{}
 	err := r.db.QueryRow(
-		`SELECT id, lesson_id, title, prompt_md, starter_code, tests_go, 
+		`SELECT id, lesson_id, title, prompt_md, 
+		        COALESCE(criteria, '') as criteria,
+		        COALESCE(hints, '') as hints,
+		        starter_code, tests_go, 
 		        COALESCE(expected_output, '') as expected_output, 
 		        COALESCE(required_patterns, '') as required_patterns, 
 		        points, order_index
 		 FROM tasks WHERE id = ?`,
 		id,
-	).Scan(&t.ID, &t.LessonID, &t.Title, &t.PromptMD, &t.StarterCode, &t.TestsGo, &t.ExpectedOutput, &t.RequiredPatterns, &t.Points, &t.OrderIndex)
+	).Scan(&t.ID, &t.LessonID, &t.Title, &t.PromptMD, &t.Criteria, &t.Hints, &t.StarterCode, &t.TestsGo, &t.ExpectedOutput, &t.RequiredPatterns, &t.Points, &t.OrderIndex)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

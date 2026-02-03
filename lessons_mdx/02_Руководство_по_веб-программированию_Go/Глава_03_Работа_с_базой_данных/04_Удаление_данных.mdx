@@ -1,0 +1,612 @@
+# Удаление данных
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **db.Exec DELETE** — удаление записи
+2. **ID из URL** — идентификация удаляемой записи
+3. **Подтверждение** — защита от случайного удаления
+4. **Soft Delete** — мягкое удаление (флаг)
+5. **Каскадное удаление** — связанные записи
+</Overview>
+
+<Theory>
+### Жёсткое vs Мягкое удаление
+
+**Жёсткое (Hard Delete):**
+```go
+db.Exec("DELETE FROM products WHERE id = ?", id)
+```
+- Данные удаляются навсегда
+- Простая реализация
+
+**Мягкое (Soft Delete):**
+```go
+db.Exec("UPDATE products SET deleted_at = NOW() WHERE id = ?", id)
+```
+- Данные остаются в БД
+- Можно восстановить
+- Нужно фильтровать в запросах
+
+### Реализация Soft Delete
+
+```sql
+-- Миграция
+ALTER TABLE products ADD COLUMN deleted_at DATETIME NULL;
+```
+
+```go
+// Получение только активных
+db.Query("SELECT * FROM products WHERE deleted_at IS NULL")
+
+// Удаление
+db.Exec("UPDATE products SET deleted_at = NOW() WHERE id = ?", id)
+
+// Восстановление
+db.Exec("UPDATE products SET deleted_at = NULL WHERE id = ?", id)
+```
+
+### Подтверждение удаления
+
+**JavaScript:**
+```html
+<a href="/delete?id={{.ID}}" 
+   onclick="return confirm('Удалить?')">Удалить</a>
+```
+
+**Модальное окно:**
+```html
+<button onclick="openDeleteModal({{.ID}})">Удалить</button>
+
+<div id="deleteModal">
+    <p>Вы уверены?</p>
+    <form method="POST" action="/delete">
+        <input type="hidden" name="id" id="deleteId">
+        <button type="submit">Да, удалить</button>
+        <button type="button" onclick="closeModal()">Отмена</button>
+    </form>
+</div>
+```
+
+### Обработчик удаления
+
+```go
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    id := r.FormValue("id")
+    
+    result, err := db.Exec("DELETE FROM products WHERE id = ?", id)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    affected, _ := result.RowsAffected()
+    if affected == 0 {
+        http.NotFound(w, r)
+        return
+    }
+    
+    http.Redirect(w, r, "/products", http.StatusSeeOther)
+}
+```
+
+### Каскадное удаление
+
+**В SQL:**
+```sql
+CREATE TABLE orders (
+    id INT PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+**В коде:**
+```go
+tx, _ := db.Begin()
+defer tx.Rollback()
+
+tx.Exec("DELETE FROM order_items WHERE order_id = ?", orderID)
+tx.Exec("DELETE FROM orders WHERE id = ?", orderID)
+
+tx.Commit()
+```
+
+### Безопасность
+
+1. **Только POST** для удаления (не GET!)
+2. **CSRF токен** для защиты
+3. **Проверка прав** пользователя
+
+```go
+// CSRF защита
+if r.FormValue("csrf_token") != session.CSRFToken {
+    http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+    return
+}
+```
+</Theory>
+
+<Syntax>
+### Удаление записи
+
+```go
+result, err := db.Exec("DELETE FROM products WHERE id = ?", id)
+
+// Проверка удаления
+affected, _ := result.RowsAffected()
+if affected == 0 {
+    // Запись не найдена
+}
+```
+
+### Мягкое удаление
+
+```go
+db.Exec("UPDATE products SET deleted_at = NOW() WHERE id = ?", id)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Простое удаление
+
+```go
+package main
+
+import (
+    "database/sql"
+    "net/http"
+    
+    "github.com/gorilla/mux"
+    _ "github.com/go-sql-driver/mysql"
+)
+
+var database *sql.DB
+
+func main() {
+    var err error
+    database, err = sql.Open("mysql", "root:password@tcp(localhost:3306)/productdb")
+    if err != nil {
+        panic(err)
+    }
+    defer database.Close()
+    
+    router := mux.NewRouter()
+    router.HandleFunc("/", listHandler).Methods("GET")
+    router.HandleFunc("/delete/{id:[0-9]+}", deleteHandler).Methods("GET")
+    
+    http.ListenAndServe(":8080", router)
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    result, err := database.Exec("DELETE FROM products WHERE id = ?", id)
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    affected, _ := result.RowsAffected()
+    if affected == 0 {
+        http.NotFound(w, r)
+        return
+    }
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+
+### Список с кнопками удаления
+
+**templates/list.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Products</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; max-width: 700px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        .btn { padding: 5px 10px; text-decoration: none; color: white; border-radius: 3px; display: inline-block; }
+        .btn-edit { background: #2196F3; }
+        .btn-delete { background: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>Products</h1>
+    
+    <p><a href="/create" class="btn" style="background:#4CAF50;">+ Add Product</a></p>
+    
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Actions</th>
+        </tr>
+        {{ range . }}
+        <tr>
+            <td>{{ .ID }}</td>
+            <td>{{ .Name }}</td>
+            <td>${{ .Price }}</td>
+            <td>
+                <a href="/edit/{{ .ID }}" class="btn btn-edit">Edit</a>
+                <a href="/delete/{{ .ID }}" class="btn btn-delete" 
+                   onclick="return confirm('Delete {{ .Name }}?')">Delete</a>
+            </td>
+        </tr>
+        {{ end }}
+    </table>
+</body>
+</html>
+```
+
+### Удаление через POST (рекомендуется)
+
+```go
+// Используем POST вместо GET для изменения данных
+router.HandleFunc("/delete/{id:[0-9]+}", deleteHandler).Methods("POST")
+```
+
+**HTML форма для удаления:**
+```html
+<form action="/delete/{{ .ID }}" method="POST" style="display:inline;">
+    <button type="submit" class="btn btn-delete" 
+            onclick="return confirm('Delete {{ .Name }}?')">Delete</button>
+</form>
+```
+
+### Страница подтверждения удаления
+
+```go
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    if r.Method == http.MethodGet {
+        // Показываем страницу подтверждения
+        var p Product
+        err := database.QueryRow(
+            "SELECT id, name, price FROM products WHERE id = ?", id,
+        ).Scan(&p.ID, &p.Name, &p.Price)
+        
+        if err == sql.ErrNoRows {
+            http.NotFound(w, r)
+            return
+        }
+        
+        tmpl := template.Must(template.ParseFiles("templates/confirm_delete.html"))
+        tmpl.Execute(w, p)
+        return
+    }
+    
+    // POST — выполняем удаление
+    database.Exec("DELETE FROM products WHERE id = ?", id)
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+
+**templates/confirm_delete.html:**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Confirm Delete</title>
+    <style>
+        .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 20px; max-width: 400px; }
+        .btn { padding: 10px 20px; text-decoration: none; color: white; border: none; cursor: pointer; }
+        .btn-danger { background: #f44336; }
+        .btn-secondary { background: #6c757d; }
+    </style>
+</head>
+<body>
+    <h1>Confirm Delete</h1>
+    
+    <div class="warning">
+        <p>Are you sure you want to delete:</p>
+        <p><strong>{{ .Name }}</strong> - ${{ .Price }}</p>
+        
+        <form action="/delete/{{ .ID }}" method="POST" style="display:inline;">
+            <button type="submit" class="btn btn-danger">Yes, Delete</button>
+        </form>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+    </div>
+</body>
+</html>
+```
+
+### Soft Delete (мягкое удаление)
+
+```go
+// Таблица с полем deleted_at
+/*
+ALTER TABLE products ADD COLUMN deleted_at DATETIME NULL;
+*/
+
+func softDeleteHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    // Помечаем как удалённое вместо реального удаления
+    _, err := database.Exec(
+        "UPDATE products SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL",
+        id,
+    )
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// Получение только неудалённых записей
+func listHandler(w http.ResponseWriter, r *http.Request) {
+    rows, _ := database.Query(
+        "SELECT id, name, price FROM products WHERE deleted_at IS NULL",
+    )
+    defer rows.Close()
+    
+    // ...
+}
+
+// Восстановление удалённой записи
+func restoreHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    database.Exec("UPDATE products SET deleted_at = NULL WHERE id = ?", id)
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+
+### Корзина (удалённые записи)
+
+```go
+func trashHandler(w http.ResponseWriter, r *http.Request) {
+    rows, _ := database.Query(
+        "SELECT id, name, price, deleted_at FROM products WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )
+    defer rows.Close()
+    
+    var products []Product
+    for rows.Next() {
+        var p Product
+        rows.Scan(&p.ID, &p.Name, &p.Price, &p.DeletedAt)
+        products = append(products, p)
+    }
+    
+    tmpl := template.Must(template.ParseFiles("templates/trash.html"))
+    tmpl.Execute(w, products)
+}
+
+// Окончательное удаление
+func permanentDeleteHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    id := vars["id"]
+    
+    database.Exec("DELETE FROM products WHERE id = ? AND deleted_at IS NOT NULL", id)
+    
+    http.Redirect(w, r, "/trash", http.StatusSeeOther)
+}
+
+// Очистка корзины
+func emptyTrashHandler(w http.ResponseWriter, r *http.Request) {
+    database.Exec("DELETE FROM products WHERE deleted_at IS NOT NULL")
+    
+    http.Redirect(w, r, "/trash", http.StatusSeeOther)
+}
+```
+
+### Массовое удаление
+
+```go
+func bulkDeleteHandler(w http.ResponseWriter, r *http.Request) {
+    r.ParseForm()
+    ids := r.Form["ids[]"]  // <input type="checkbox" name="ids[]" value="1">
+    
+    if len(ids) == 0 {
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+        return
+    }
+    
+    // Строим запрос с плейсхолдерами
+    placeholders := ""
+    args := make([]interface{}, len(ids))
+    for i, id := range ids {
+        if i > 0 {
+            placeholders += ","
+        }
+        placeholders += "?"
+        args[i] = id
+    }
+    
+    query := "DELETE FROM products WHERE id IN (" + placeholders + ")"
+    database.Exec(query, args...)
+    
+    http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+```
+
+**HTML для массового удаления:**
+```html
+<form action="/bulk-delete" method="POST">
+    <table>
+        <tr>
+            <th><input type="checkbox" id="selectAll"></th>
+            <th>ID</th>
+            <th>Name</th>
+        </tr>
+        {{ range . }}
+        <tr>
+            <td><input type="checkbox" name="ids[]" value="{{ .ID }}"></td>
+            <td>{{ .ID }}</td>
+            <td>{{ .Name }}</td>
+        </tr>
+        {{ end }}
+    </table>
+    <button type="submit" onclick="return confirm('Delete selected items?')">Delete Selected</button>
+</form>
+
+<script>
+document.getElementById('selectAll').addEventListener('change', function() {
+    document.querySelectorAll('input[name="ids[]"]').forEach(cb => cb.checked = this.checked);
+});
+</script>
+```
+</Examples>
+
+<Pitfalls>
+### 1. Удаление через GET
+
+```go
+// ❌ Поисковые боты могут удалить данные
+router.HandleFunc("/delete/{id}", deleteHandler).Methods("GET")
+
+// ✅ Используйте POST для изменяющих операций
+router.HandleFunc("/delete/{id}", deleteHandler).Methods("POST")
+```
+
+### 2. Каскадное удаление без проверки
+
+```go
+// ❌ Удаляем категорию, а товары остаются без категории
+database.Exec("DELETE FROM categories WHERE id = ?", id)
+
+// ✅ Проверяем связанные записи
+var count int
+database.QueryRow("SELECT COUNT(*) FROM products WHERE category_id = ?", id).Scan(&count)
+if count > 0 {
+    http.Error(w, "Cannot delete category with products", 400)
+    return
+}
+```
+
+### 3. Нет подтверждения
+
+```go
+// ❌ Сразу удаляем
+<a href="/delete/{{ .ID }}">Delete</a>
+
+// ✅ Спрашиваем подтверждение
+<a href="/delete/{{ .ID }}" onclick="return confirm('Are you sure?')">Delete</a>
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: gRPC сервер</Title>
+<Prompt>
+Создайте gRPC сервер.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("gRPC: s := grpc.NewServer(); pb.RegisterXXXServer(s, &server{})")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+gRPC: s := grpc.NewServer(); pb.RegisterXXXServer(s, &server{})
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Protobuf</Title>
+<Prompt>
+Определите сервис в proto.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Proto: service Greeter { rpc SayHello(Request) returns (Response); }")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Proto: service Greeter { rpc SayHello(Request) returns (Response); }
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: gRPC клиент</Title>
+<Prompt>
+Создайте gRPC клиента.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Клиент: conn, _ := grpc.Dial(addr, grpc.WithInsecure())")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Клиент: conn, _ := grpc.Dial(addr, grpc.WithInsecure())
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Streaming</Title>
+<Prompt>
+Реализуйте streaming.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Streaming: server streaming, client streaming, bidirectional")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Streaming: server streaming, client streaming, bidirectional
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: gRPC interceptors</Title>
+<Prompt>
+Добавьте interceptors.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Interceptors: grpc.UnaryInterceptor(loggingInterceptor)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Interceptors: grpc.UnaryInterceptor(loggingInterceptor)
+</ExpectedOutput>
+</Task>

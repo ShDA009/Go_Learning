@@ -1,0 +1,650 @@
+# Строка запроса и отправка форм
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **Query параметры** — данные в URL после `?`
+2. **FormValue** — получение данных из форм
+3. **POST/GET** — разные методы отправки
+4. **ParseForm** — парсинг данных формы
+5. **Multipart** — загрузка файлов
+</Overview>
+
+<Theory>
+### Query параметры — данные в URL
+
+```
+http://example.com/search?query=golang&page=2
+                          ↑_______________↑
+                          Query параметры
+```
+
+```go
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+    query := r.URL.Query().Get("query")  // "golang"
+    page := r.URL.Query().Get("page")    // "2"
+}
+```
+
+### POST формы — данные в теле запроса
+
+```html
+<form action="/login" method="POST">
+    <input name="username" type="text">
+    <input name="password" type="password">
+    <button type="submit">Login</button>
+</form>
+```
+
+```go
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodPost {
+        username := r.FormValue("username")
+        password := r.FormValue("password")
+        // проверка логина...
+    }
+}
+```
+
+### ParseForm — обязательный шаг
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    // Для POST/PUT данных нужно вызвать ParseForm
+    r.ParseForm()
+    
+    // Теперь данные доступны
+    value := r.Form.Get("key")
+    
+    // Или короче (ParseForm вызовется автоматически)
+    value := r.FormValue("key")
+}
+```
+
+### FormValue vs PostFormValue
+
+| Метод | Источник |
+|-------|----------|
+| `FormValue` | Query + POST body |
+| `PostFormValue` | Только POST body |
+
+### Загрузка файлов
+
+```html
+<form action="/upload" method="POST" enctype="multipart/form-data">
+    <input name="file" type="file">
+    <button type="submit">Upload</button>
+</form>
+```
+
+```go
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+    // Ограничение памяти: 10MB
+    r.ParseMultipartForm(10 << 20)
+    
+    file, header, err := r.FormFile("file")
+    if err != nil {
+        http.Error(w, "Error", 400)
+        return
+    }
+    defer file.Close()
+    
+    // header.Filename — имя файла
+    // header.Size — размер
+    // file — io.Reader для чтения содержимого
+    
+    dst, _ := os.Create("./uploads/" + header.Filename)
+    defer dst.Close()
+    io.Copy(dst, file)
+}
+```
+
+### Валидация данных
+
+Всегда проверяйте входные данные!
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    email := r.FormValue("email")
+    
+    if email == "" {
+        http.Error(w, "Email required", http.StatusBadRequest)
+        return
+    }
+    
+    if !strings.Contains(email, "@") {
+        http.Error(w, "Invalid email", http.StatusBadRequest)
+        return
+    }
+    
+    // Обработка...
+}
+```
+</Theory>
+
+<Syntax>
+### Query параметры
+
+```go
+r.URL.Query()           // все параметры
+r.URL.Query().Get(key)  // конкретный параметр
+```
+
+### Данные формы
+
+```go
+r.ParseForm()           // парсинг формы
+r.FormValue(key)        // значение поля
+r.PostFormValue(key)    // только POST данные
+r.Form[key]             // все значения (slice)
+```
+
+### Загрузка файлов
+
+```go
+r.ParseMultipartForm(maxMemory)
+file, header, err := r.FormFile(key)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Получение Query параметров
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+// URL: /search?q=golang&page=2
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+    query := r.URL.Query()
+    
+    q := query.Get("q")
+    page := query.Get("page")
+    
+    if page == "" {
+        page = "1"
+    }
+    
+    fmt.Fprintf(w, "Search: %s\nPage: %s", q, page)
+}
+
+func main() {
+    http.HandleFunc("/search", searchHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Обработка HTML формы (GET)
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+// HTML форма
+const formHTML = `
+<!DOCTYPE html>
+<html>
+<body>
+    <form action="/greet" method="GET">
+        <input type="text" name="name" placeholder="Your name">
+        <button type="submit">Greet</button>
+    </form>
+</body>
+</html>
+`
+
+func formHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, formHTML)
+}
+
+func greetHandler(w http.ResponseWriter, r *http.Request) {
+    name := r.URL.Query().Get("name")
+    if name == "" {
+        name = "Guest"
+    }
+    fmt.Fprintf(w, "Hello, %s!", name)
+}
+
+func main() {
+    http.HandleFunc("/", formHandler)
+    http.HandleFunc("/greet", greetHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Обработка POST формы
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+const loginFormHTML = `
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Login</h2>
+    <form action="/login" method="POST">
+        <input type="text" name="username" placeholder="Username"><br><br>
+        <input type="password" name="password" placeholder="Password"><br><br>
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>
+`
+
+func loginPageHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, loginFormHTML)
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+        return
+    }
+    
+    // Получаем данные формы
+    username := r.FormValue("username")
+    password := r.FormValue("password")
+    
+    // Простая проверка (не для продакшена!)
+    if username == "admin" && password == "secret" {
+        fmt.Fprintf(w, "Welcome, %s!", username)
+    } else {
+        fmt.Fprint(w, "Invalid credentials")
+    }
+}
+
+func main() {
+    http.HandleFunc("/", loginPageHandler)
+    http.HandleFunc("/login", loginHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Форма с множественными значениями
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "strings"
+)
+
+const checkboxFormHTML = `
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Select your interests</h2>
+    <form action="/interests" method="POST">
+        <input type="checkbox" name="interest" value="go"> Go<br>
+        <input type="checkbox" name="interest" value="python"> Python<br>
+        <input type="checkbox" name="interest" value="javascript"> JavaScript<br>
+        <input type="checkbox" name="interest" value="rust"> Rust<br><br>
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
+`
+
+func formHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, checkboxFormHTML)
+}
+
+func interestsHandler(w http.ResponseWriter, r *http.Request) {
+    r.ParseForm()
+    
+    // Получаем все выбранные значения
+    interests := r.Form["interest"]
+    
+    if len(interests) == 0 {
+        fmt.Fprint(w, "No interests selected")
+        return
+    }
+    
+    fmt.Fprintf(w, "Your interests: %s", strings.Join(interests, ", "))
+}
+
+func main() {
+    http.HandleFunc("/", formHandler)
+    http.HandleFunc("/interests", interestsHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Загрузка файлов
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+)
+
+const uploadFormHTML = `
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Upload File</h2>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+        <input type="file" name="file"><br><br>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>
+`
+
+func uploadPageHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, uploadFormHTML)
+}
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+    // Ограничение размера: 10 MB
+    r.ParseMultipartForm(10 << 20)
+    
+    file, header, err := r.FormFile("file")
+    if err != nil {
+        http.Error(w, "Error reading file", http.StatusBadRequest)
+        return
+    }
+    defer file.Close()
+    
+    // Создаём файл на сервере
+    dst, err := os.Create("uploads/" + header.Filename)
+    if err != nil {
+        http.Error(w, "Error saving file", http.StatusInternalServerError)
+        return
+    }
+    defer dst.Close()
+    
+    // Копируем содержимое
+    io.Copy(dst, file)
+    
+    fmt.Fprintf(w, "File %s uploaded successfully!", header.Filename)
+}
+
+func main() {
+    os.MkdirAll("uploads", 0755)
+    
+    http.HandleFunc("/", uploadPageHandler)
+    http.HandleFunc("/upload", uploadHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### JSON в теле запроса
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+type User struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+    Age   int    `json:"age"`
+}
+
+func createUserHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    
+    var user User
+    
+    err := json.NewDecoder(r.Body).Decode(&user)
+    if err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    
+    fmt.Fprintf(w, "Created user: %s (%s), age %d", 
+        user.Name, user.Email, user.Age)
+}
+
+func main() {
+    http.HandleFunc("/users", createUserHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+
+// Тест: curl -X POST -d '{"name":"John","email":"john@example.com","age":30}' localhost:8080/users
+```
+
+### Валидация формы
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "regexp"
+    "strconv"
+)
+
+type RegistrationForm struct {
+    Username string
+    Email    string
+    Age      int
+    Errors   map[string]string
+}
+
+func (f *RegistrationForm) Validate() bool {
+    f.Errors = make(map[string]string)
+    
+    if len(f.Username) < 3 {
+        f.Errors["username"] = "Username must be at least 3 characters"
+    }
+    
+    emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+    if !emailRegex.MatchString(f.Email) {
+        f.Errors["email"] = "Invalid email format"
+    }
+    
+    if f.Age < 18 || f.Age > 120 {
+        f.Errors["age"] = "Age must be between 18 and 120"
+    }
+    
+    return len(f.Errors) == 0
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.ServeFile(w, r, "register.html")
+        return
+    }
+    
+    age, _ := strconv.Atoi(r.FormValue("age"))
+    
+    form := RegistrationForm{
+        Username: r.FormValue("username"),
+        Email:    r.FormValue("email"),
+        Age:      age,
+    }
+    
+    if !form.Validate() {
+        for field, err := range form.Errors {
+            fmt.Fprintf(w, "%s: %s\n", field, err)
+        }
+        return
+    }
+    
+    fmt.Fprintf(w, "Registration successful for %s!", form.Username)
+}
+
+func main() {
+    http.HandleFunc("/register", registerHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Не вызвали ParseForm
+
+```go
+// ❌ Form может быть nil
+values := r.Form["key"]
+
+// ✅ Сначала парсим
+r.ParseForm()
+values := r.Form["key"]
+```
+
+### 2. FormValue vs PostFormValue
+
+```go
+// FormValue ищет и в URL, и в теле
+r.FormValue("key")  // GET и POST
+
+// PostFormValue — только в теле
+r.PostFormValue("key")  // только POST
+```
+
+### 3. Забыли enctype для файлов
+
+```go
+// ❌ Файл не загрузится
+<form method="POST">
+
+// ✅ Нужен enctype
+<form method="POST" enctype="multipart/form-data">
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Логирование</Title>
+<Prompt>
+Используйте structured logging.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Логирование: zerolog, zap, или slog")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Логирование: zerolog, zap, или slog
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: slog из std</Title>
+<Prompt>
+Используйте встроенный slog.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("slog: slog.Info(\"message\", \"key\", value)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+slog: slog.Info("message", "key", value)
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Уровни логов</Title>
+<Prompt>
+Настройте уровни логирования.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Уровни: Debug, Info, Warn, Error")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Уровни: Debug, Info, Warn, Error
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: JSON формат логов</Title>
+<Prompt>
+Выводите логи в JSON.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("JSON: {\"level\":\"info\",\"msg\":\"message\",\"time\":\"...\"}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+JSON: {"level":"info","msg":"message","time":"..."}
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Request ID</Title>
+<Prompt>
+Добавьте request ID в логи.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Request ID: uuid для трейсинга запросов")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Request ID: uuid для трейсинга запросов
+</ExpectedOutput>
+</Task>

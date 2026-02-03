@@ -1,0 +1,161 @@
+# gRPC-Gateway и OpenAPI
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. Браузеры не умеют gRPC напрямую → нужен **grpc-gateway** (REST ↔ gRPC)
+2. API описывается в `.proto`, а REST‑маппинг задаётся через **google.api.http**
+3. Можно генерировать **OpenAPI/Swagger** из proto
+4. Gateway полезен, когда хотите один контракт, но 2 вида клиентов (REST и gRPC)
+5. Важно продумать: auth, error mapping, лимиты и совместимость
+</Overview>
+
+<Theory>
+### Когда нужен grpc-gateway
+
+Используйте, если:
+- внутренние сервисы общаются по gRPC
+- внешний/веб‑клиенту нужен REST/JSON
+- хотите единый контракт (proto) и автогенерацию клиент/сервер
+
+Не всегда нужен: если у вас только backend-to-backend и нет браузерных клиентов.
+
+### Как это выглядит
+
+```
+Browser/REST client ──HTTP/JSON──> grpc-gateway ──gRPC──> gRPC service
+```
+</Theory>
+
+<Syntax>
+### Пример proto с HTTP аннотациями
+
+```protobuf
+syntax = "proto3";
+
+package users.v1;
+
+import "google/api/annotations.proto";
+
+service UsersService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/users/{id}"
+    };
+  }
+}
+
+message GetUserRequest {
+  int64 id = 1;
+}
+message GetUserResponse {
+  User user = 1;
+}
+message User {
+  int64 id = 1;
+  string email = 2;
+}
+```
+
+### Генерация (пример команд)
+
+```bash
+protoc \
+  -I proto \
+  -I third_party \
+  --go_out=./gen --go_opt=paths=source_relative \
+  --go-grpc_out=./gen --go-grpc_opt=paths=source_relative \
+  --grpc-gateway_out=./gen --grpc-gateway_opt=paths=source_relative \
+  proto/users/v1/users.proto
+```
+
+Для OpenAPI:
+
+```bash
+protoc \
+  --openapiv2_out=./openapi \
+  proto/users/v1/users.proto
+```
+</Syntax>
+
+<Examples>
+### Пример: запуск gateway (концепт)
+
+```go
+ctx := context.Background()
+
+mux := runtime.NewServeMux()
+opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+_ = pb.RegisterUsersServiceHandlerFromEndpoint(ctx, mux, "localhost:9090", opts)
+
+httpSrv := &http.Server{
+	Addr:    ":8080",
+	Handler: mux,
+}
+_ = httpSrv.ListenAndServe()
+```
+
+### Важный момент про ошибки
+
+gRPC имеет коды `codes.*`, а REST обычно использует HTTP status codes.
+Gateway умеет маппить ошибки, но вам нужно определиться со стандартом ошибок (body формат) и обеспечить единообразие.
+</Examples>
+
+<Pitfalls>
+1. **Стриминг**: не все streaming‑паттерны удобно маппятся в REST
+2. **Auth**: нужно прокидывать токены/метадату корректно
+3. **Версионирование**: версионируйте и proto, и REST пути (`/api/v1/...`)
+4. **Ошибки**: продумайте формат ошибок для REST клиентов
+5. **Дублирование логики**: gateway должен быть “тонким”, логика — в gRPC сервисе
+</Pitfalls>
+
+<Links>
+- `https://github.com/grpc-ecosystem/grpc-gateway`
+- `https://github.com/googleapis/googleapis` (annotations)
+</Links>
+
+<Task id="1" points="15">
+<Title>Задание 1: Добавьте grpc-gateway (опционально)</Title>
+<Prompt>
+В capstone gRPC проекте добавьте grpc-gateway для одного-двух методов и поднимите REST endpoint `/api/v1/...`, который проксирует в gRPC.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("grpc-gateway: REST -> gRPC proxy")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+grpc-gateway: REST -> gRPC proxy
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Сгенерируйте OpenAPI</Title>
+<Prompt>
+Сгенерируйте OpenAPI из proto и подключите Swagger UI (или отдайте файл), чтобы можно было посмотреть документацию и протестировать REST.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("OpenAPI generated from proto")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+OpenAPI generated from proto
+</ExpectedOutput>
+</Task>
+

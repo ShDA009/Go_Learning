@@ -1,0 +1,672 @@
+# Структуры (Structs) в Go
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Структура** — составной тип данных, объединяющий несколько полей разных типов
+2. **Поля** — именованные атрибуты структуры со своими типами
+3. **Инкапсуляция** — структуры позволяют группировать связанные данные
+4. **Значения по умолчанию** — неинициализированные поля получают нулевые значения своего типа
+5. **Копирование** — структуры копируются по значению (создаётся полная копия)
+6. **Указатели на структуры** — позволяют избежать копирования и изменять оригинал
+</Overview>
+
+<Theory>
+### Что такое структура?
+
+**Структура (struct)** — это составной тип, объединяющий несколько значений разных типов под одним именем. Это как "коробка" с несколькими отсеками.
+
+```go
+type Person struct {
+    Name string
+    Age  int
+    City string
+}
+```
+
+В других языках похожие концепции:
+- Java/C#: class (без методов)
+- Python: dataclass
+- JavaScript: object
+
+### Зачем нужны структуры?
+
+Без структуры данные о человеке разбросаны:
+```go
+name1, age1, city1 := "Alice", 25, "Moscow"
+name2, age2, city2 := "Bob", 30, "Berlin"
+// Легко перепутать!
+```
+
+Со структурой всё вместе:
+```go
+alice := Person{Name: "Alice", Age: 25, City: "Moscow"}
+bob := Person{Name: "Bob", Age: 30, City: "Berlin"}
+// Данные организованы
+```
+
+### Нулевые значения
+
+Поля структуры получают нулевые значения своих типов:
+
+```go
+var p Person
+// p.Name = "" (пустая строка)
+// p.Age = 0
+// p.City = ""
+```
+
+### Копирование структур
+
+При присваивании структура **копируется полностью**:
+
+```go
+p1 := Person{Name: "Alice", Age: 25}
+p2 := p1       // p2 — КОПИЯ p1
+p2.Age = 30    // изменяем копию
+
+fmt.Println(p1.Age)  // 25 — оригинал не изменился
+fmt.Println(p2.Age)  // 30
+```
+
+### Указатели на структуры
+
+Для изменения оригинала или избегания копирования используйте указатели:
+
+```go
+p1 := &Person{Name: "Alice", Age: 25}  // *Person
+p1.Age = 30  // изменяем оригинал
+
+// Go автоматически разыменовывает!
+// p1.Age — это на самом деле (*p1).Age
+```
+
+### Экспорт полей
+
+Видимость полей определяется регистром первой буквы:
+
+```go
+type User struct {
+    Name     string  // экспортируется (виден извне пакета)
+    password string  // НЕ экспортируется (приватный)
+}
+```
+
+### Теги структур (Struct Tags)
+
+Теги — метаданные для полей, используемые библиотеками:
+
+```go
+type User struct {
+    Name  string `json:"name" db:"user_name"`
+    Email string `json:"email,omitempty"`
+    Age   int    `json:"-"`  // игнорировать при JSON
+}
+```
+
+Теги доступны через reflection (пакет `reflect`).
+
+### Сравнение структур
+
+Структуры можно сравнивать, если все их поля сравнимы:
+
+```go
+p1 := Person{Name: "Alice", Age: 25}
+p2 := Person{Name: "Alice", Age: 25}
+p3 := Person{Name: "Bob", Age: 30}
+
+p1 == p2  // true
+p1 == p3  // false
+```
+</Theory>
+
+<Syntax>
+### Определение структуры
+
+```go
+type ИмяСтруктуры struct {
+    поле1 тип1
+    поле2 тип2
+    // ...
+}
+```
+
+### Поля одного типа можно объединять
+
+```go
+type Person struct {
+    name, city string  // оба поля типа string
+    age        int
+}
+```
+
+### Создание экземпляра
+
+```go
+var p Person                           // нулевые значения
+p := Person{}                          // нулевые значения
+p := Person{"Tom", "Moscow", 25}       // по порядку полей
+p := Person{name: "Tom", age: 25}      // по именам полей
+p := new(Person)                       // указатель на структуру
+```
+
+### Доступ к полям
+
+```go
+p.name = "Alice"    // запись
+fmt.Println(p.name) // чтение
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовое создание и использование структуры
+
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    name string
+    age  int
+}
+
+func main() {
+    // Способ 1: Объявление с нулевыми значениями
+    var tom Person
+    fmt.Println(tom)  // { 0} — пустая строка и 0
+    
+    // Способ 2: Инициализация по порядку полей
+    alice := Person{"Alice", 30}
+    fmt.Println(alice)  // {Alice 30}
+    
+    // Способ 3: Инициализация по именам полей (рекомендуется)
+    bob := Person{name: "Bob", age: 25}
+    fmt.Println(bob)  // {Bob 25}
+    
+    // Способ 4: Частичная инициализация
+    kate := Person{name: "Kate"}  // age = 0
+    fmt.Println(kate)  // {Kate 0}
+}
+```
+
+### Работа с полями структуры
+
+```go
+package main
+
+import "fmt"
+
+type Employee struct {
+    name     string
+    position string
+    salary   float64
+}
+
+func main() {
+    emp := Employee{
+        name:     "John",
+        position: "Developer",
+        salary:   75000,
+    }
+    
+    // Чтение полей
+    fmt.Println("Имя:", emp.name)
+    fmt.Println("Должность:", emp.position)
+    fmt.Printf("Зарплата: $%.2f\n", emp.salary)
+    
+    // Изменение полей
+    emp.salary *= 1.1  // повышение на 10%
+    fmt.Printf("Новая зарплата: $%.2f\n", emp.salary)
+}
+```
+
+### Указатели на структуры
+
+```go
+package main
+
+import "fmt"
+
+type Point struct {
+    x, y int
+}
+
+func main() {
+    // Обычная структура
+    p1 := Point{10, 20}
+    
+    // Указатель на структуру
+    p2 := &Point{30, 40}
+    
+    // Указатель через new
+    p3 := new(Point)
+    p3.x = 50
+    p3.y = 60
+    
+    // Доступ к полям через указатель (упрощённый синтаксис)
+    fmt.Println("p2.x =", p2.x)  // Go автоматически разыменовывает
+    
+    // Полный синтаксис (тоже работает)
+    fmt.Println("(*p2).x =", (*p2).x)
+    
+    // Изменение через указатель
+    p2.x = 100
+    fmt.Println("p2 после изменения:", *p2)  // {100 40}
+}
+```
+
+### Копирование структур
+
+```go
+package main
+
+import "fmt"
+
+type Rectangle struct {
+    width, height int
+}
+
+func main() {
+    r1 := Rectangle{10, 20}
+    
+    // При присваивании создаётся КОПИЯ
+    r2 := r1
+    
+    // Изменение r2 НЕ влияет на r1
+    r2.width = 100
+    
+    fmt.Println("r1:", r1)  // {10 20} — не изменился
+    fmt.Println("r2:", r2)  // {100 20} — изменился
+}
+```
+
+### Передача структуры в функцию
+
+```go
+package main
+
+import "fmt"
+
+type User struct {
+    name string
+    age  int
+}
+
+// По значению — получает КОПИЮ
+func birthday(u User) {
+    u.age++
+    fmt.Println("В функции:", u.age)
+}
+
+// По указателю — изменяет ОРИГИНАЛ
+func birthdayPtr(u *User) {
+    u.age++
+    fmt.Println("В функции:", u.age)
+}
+
+func main() {
+    user := User{"Tom", 30}
+    
+    birthday(user)
+    fmt.Println("После birthday():", user.age)  // 30 — не изменился!
+    
+    birthdayPtr(&user)
+    fmt.Println("После birthdayPtr():", user.age)  // 31 — изменился!
+}
+```
+
+### Анонимные структуры
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Анонимная структура с инициализацией
+    point := struct {
+        x, y int
+    }{
+        x: 10,
+        y: 20,
+    }
+    fmt.Println("Point:", point)
+    
+    // Анонимная структура без инициализации
+    var config struct {
+        host string
+        port int
+    }
+    config.host = "localhost"
+    config.port = 8080
+    fmt.Println("Config:", config)
+}
+```
+
+### Анонимные поля
+
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    string  // анонимное поле — тип становится именем
+    int     // анонимное поле
+}
+
+func main() {
+    p := Person{"Alice", 25}
+    
+    // Доступ по имени типа
+    fmt.Println("string:", p.string)  // Alice
+    fmt.Println("int:", p.int)        // 25
+}
+```
+
+### Сравнение структур
+
+```go
+package main
+
+import "fmt"
+
+type Point struct {
+    x, y int
+}
+
+func main() {
+    p1 := Point{10, 20}
+    p2 := Point{10, 20}
+    p3 := Point{30, 40}
+    
+    fmt.Println("p1 == p2:", p1 == p2)  // true — все поля равны
+    fmt.Println("p1 == p3:", p1 == p3)  // false — поля различаются
+}
+```
+
+### Создание через new()
+
+```go
+package main
+
+import "fmt"
+
+type Book struct {
+    title  string
+    author string
+    pages  int
+}
+
+func main() {
+    // new возвращает указатель на структуру с нулевыми значениями
+    book := new(Book)
+    fmt.Println("До:", *book)  // {  0}
+    
+    book.title = "Go Programming"
+    book.author = "John Doe"
+    book.pages = 300
+    
+    fmt.Println("После:", *book)  // {Go Programming John Doe 300}
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Путаница между структурой и указателем на структуру
+
+```go
+type User struct {
+    name string
+}
+
+// ❌ НЕПРАВИЛЬНО — функция получает копию
+func setName(u User, name string) {
+    u.name = name  // изменяется только копия!
+}
+
+// ✅ ПРАВИЛЬНО — функция получает указатель
+func setName(u *User, name string) {
+    u.name = name  // изменяется оригинал
+}
+```
+
+### 2. Инициализация по порядку полей — хрупкий код
+
+```go
+type Person struct {
+    name string
+    age  int
+}
+
+// ❌ НЕПРАВИЛЬНО — если добавится новое поле, код сломается
+p := Person{"Tom", 30}
+
+// ✅ ПРАВИЛЬНО — явное указание полей
+p := Person{name: "Tom", age: 30}
+```
+
+### 3. Забыли про nil указатель
+
+```go
+// ❌ НЕПРАВИЛЬНО — panic: nil pointer dereference
+var p *Person
+fmt.Println(p.name)
+
+// ✅ ПРАВИЛЬНО — проверяем nil
+var p *Person
+if p != nil {
+    fmt.Println(p.name)
+}
+```
+
+### 4. Два анонимных поля одного типа
+
+```go
+// ❌ НЕПРАВИЛЬНО — ошибка компиляции
+type Wrong struct {
+    string  // первое поле string
+    string  // ОШИБКА: string redeclared
+}
+
+// ✅ ПРАВИЛЬНО — одному полю даём имя
+type Correct struct {
+    string       // анонимное
+    other string // именованное
+}
+```
+
+### 5. Экспорт полей: регистр имеет значение
+
+```go
+type user struct {       // приватная структура (маленькая буква)
+    name string          // приватное поле
+    Age  int             // публичное поле (большая буква)
+}
+
+type User struct {       // публичная структура
+    Name string          // публичное поле
+    age  int             // приватное поле — недоступно извне пакета
+}
+```
+
+### 6. Сравнение структур с несравнимыми полями
+
+```go
+// ❌ НЕПРАВИЛЬНО — срезы нельзя сравнивать напрямую
+type Data struct {
+    values []int
+}
+d1 := Data{[]int{1, 2}}
+d2 := Data{[]int{1, 2}}
+// fmt.Println(d1 == d2)  // ОШИБКА компиляции!
+
+// ✅ ПРАВИЛЬНО — используем reflect.DeepEqual
+import "reflect"
+fmt.Println(reflect.DeepEqual(d1, d2))  // true
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Создание структуры</Title>
+<Prompt>
+Создайте структуру Person с полями Name и Age.
+</Prompt>
+<Hints>
+- `type Person struct { Name string; Age int }`
+- `p := Person{Name: "Alice", Age: 25}`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    p := Person{Name: "Alice", Age: 25}
+    // Выведите информацию
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Персона: {Alice 25}
+Имя: Alice
+Возраст: 25
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Нулевое значение структуры</Title>
+<Prompt>
+Покажите нулевые значения полей структуры.
+</Prompt>
+<Hints>
+- `var p Person` — нулевые значения
+- Строка: "", int: 0, bool: false
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    var p Person
+    // Покажите нулевые значения
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Пустая структура: { 0}
+Имя пустое: true
+Возраст: 0
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Анонимная структура</Title>
+<Prompt>
+Создайте и используйте анонимную структуру.
+</Prompt>
+<Hints>
+- `point := struct{ X, Y int }{10, 20}`
+- Полезно для одноразовых структур
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Создайте анонимную структуру
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Точка: {X:10 Y:20}
+Координаты: (10, 20)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Копирование структуры</Title>
+<Prompt>
+Покажите, что присваивание структуры создаёт копию.
+</Prompt>
+<Hints>
+- `p2 := p1` — копирование
+- Структуры копируются по значению
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    p1 := Person{"Alice", 25}
+    // Создайте копию и измените
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Оригинал: {Alice 25}
+Копия: {Bob 25}
+Они разные: true
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Сравнение структур</Title>
+<Prompt>
+Сравните две структуры через == и покажите результат.
+</Prompt>
+<Hints>
+- Структуры равны если все поля равны
+- Нельзя сравнивать структуры со срезами
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    p1 := Person{"Alice", 25}
+    p2 := Person{"Alice", 25}
+    p3 := Person{"Bob", 30}
+    // Сравните структуры
+}
+```
+</StarterCode>
+<ExpectedOutput>
+p1 == p2: true
+p1 == p3: false
+</ExpectedOutput>
+</Task>

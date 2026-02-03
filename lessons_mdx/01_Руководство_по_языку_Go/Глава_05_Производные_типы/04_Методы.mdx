@@ -1,0 +1,721 @@
+# Методы в Go
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Метод** — функция, связанная с определённым типом через получателя (receiver)
+2. **Получатель (receiver)** — специальный параметр, определяющий тип, к которому привязан метод
+3. **Вызов метода** — через точку после переменной: `object.Method()`
+4. **Методы для любых типов** — можно определять методы не только для структур, но и для псевдонимов
+5. **Инкапсуляция поведения** — методы группируют данные и операции над ними
+</Overview>
+
+<Theory>
+### Что такое метод?
+
+**Метод** — это функция, привязанная к типу. Вместо `function(object)` вызывается `object.Method()`.
+
+```go
+// Функция
+func PrintPerson(p Person) {
+    fmt.Println(p.Name)
+}
+PrintPerson(person)  // вызов
+
+// Метод
+func (p Person) Print() {
+    fmt.Println(p.Name)
+}
+person.Print()  // вызов
+```
+
+### Получатель (Receiver)
+
+Получатель — это "особый параметр" в скобках перед именем метода:
+
+```go
+func (p Person) Method() { ... }
+//    ↑
+//    получатель
+```
+
+Внутри метода получатель доступен как обычная переменная.
+
+### Функция vs Метод: когда что?
+
+**Используйте метод когда:**
+- Функция логически связана с типом
+- Нужен "объектный" синтаксис (`user.Save()`)
+- Хотите реализовать интерфейс
+
+**Используйте функцию когда:**
+- Операция не привязана к конкретному типу
+- Работаете с несколькими типами одинаково
+- Утилитарная логика (сортировка, форматирование)
+
+### Методы для любых типов
+
+Методы можно определять не только для структур, но для любых пользовательских типов:
+
+```go
+type Celsius float64
+
+func (c Celsius) ToFahrenheit() float64 {
+    return float64(c)*9/5 + 32
+}
+
+temp := Celsius(100)
+fmt.Println(temp.ToFahrenheit())  // 212
+```
+
+**Ограничение:** Нельзя добавлять методы к типам из других пакетов (включая встроенные int, string).
+
+### Цепочки методов (Method Chaining)
+
+Если метод возвращает тот же тип, можно строить цепочки:
+
+```go
+type Builder struct {
+    result string
+}
+
+func (b *Builder) Add(s string) *Builder {
+    b.result += s
+    return b
+}
+
+func (b *Builder) Space() *Builder {
+    b.result += " "
+    return b
+}
+
+b := &Builder{}
+b.Add("Hello").Space().Add("World")  // цепочка
+fmt.Println(b.result)  // "Hello World"
+```
+
+### Методы и пакеты
+
+Метод должен быть определён в том же пакете, что и тип:
+
+```go
+// В пакете models
+type User struct { Name string }
+
+// В том же пакете — OK
+func (u User) Greet() string { return "Hello, " + u.Name }
+
+// В другом пакете — ОШИБКА!
+```
+
+### Методы-геттеры и сеттеры
+
+Go не использует префиксы Get/Set как в Java:
+
+```go
+// ❌ Java-стиль
+func (u *User) GetName() string { return u.name }
+func (u *User) SetName(n string) { u.name = n }
+
+// ✅ Go-стиль
+func (u *User) Name() string { return u.name }
+func (u *User) SetName(n string) { u.name = n }
+```
+</Theory>
+
+<Syntax>
+### Определение метода
+
+```go
+func (получатель Тип) ИмяМетода(параметры) возвращаемыйТип {
+    // тело метода
+}
+```
+
+### Примеры объявлений
+
+```go
+// Метод без параметров и возвращаемого значения
+func (p Person) Print() {
+    fmt.Println(p.name)
+}
+
+// Метод с параметрами
+func (p Person) SayHello(greeting string) {
+    fmt.Println(greeting, p.name)
+}
+
+// Метод с возвращаемым значением
+func (p Person) Age() int {
+    return p.age
+}
+```
+
+### Вызов метода
+
+```go
+person := Person{name: "Tom", age: 30}
+person.Print()                    // вызов метода
+person.SayHello("Hello,")         // с параметром
+fmt.Println(person.Age())         // с результатом
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовые методы структуры
+
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    name string
+    age  int
+}
+
+// Метод для вывода информации
+func (p Person) Print() {
+    fmt.Printf("Имя: %s, Возраст: %d\n", p.name, p.age)
+}
+
+// Метод с параметром
+func (p Person) Greet(message string) {
+    fmt.Println(message, p.name)
+}
+
+// Метод с возвращаемым значением
+func (p Person) IsAdult() bool {
+    return p.age >= 18
+}
+
+func main() {
+    tom := Person{name: "Tom", age: 25}
+    
+    tom.Print()           // Имя: Tom, Возраст: 25
+    tom.Greet("Привет,")  // Привет, Tom
+    
+    if tom.IsAdult() {
+        fmt.Println(tom.name, "— взрослый")
+    }
+}
+```
+
+### Методы для псевдонимов типов
+
+```go
+package main
+
+import "fmt"
+
+// Псевдоним для среза строк
+type StringList []string
+
+// Метод для StringList
+func (sl StringList) Print() {
+    for i, s := range sl {
+        fmt.Printf("%d: %s\n", i+1, s)
+    }
+}
+
+// Метод для подсчёта элементов
+func (sl StringList) Count() int {
+    return len(sl)
+}
+
+// Метод поиска
+func (sl StringList) Contains(item string) bool {
+    for _, s := range sl {
+        if s == item {
+            return true
+        }
+    }
+    return false
+}
+
+func main() {
+    books := StringList{"Book1", "Book2", "Book3"}
+    
+    books.Print()
+    fmt.Println("Количество:", books.Count())
+    fmt.Println("Содержит Book2:", books.Contains("Book2"))
+}
+```
+
+### Методы для числовых типов
+
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+type Celsius float64
+type Fahrenheit float64
+
+// Метод преобразования Цельсия в Фаренгейт
+func (c Celsius) ToFahrenheit() Fahrenheit {
+    return Fahrenheit(c*9/5 + 32)
+}
+
+// Метод форматированного вывода
+func (c Celsius) String() string {
+    return fmt.Sprintf("%.1f°C", c)
+}
+
+func (f Fahrenheit) ToCelsius() Celsius {
+    return Celsius((f - 32) * 5 / 9)
+}
+
+func (f Fahrenheit) String() string {
+    return fmt.Sprintf("%.1f°F", f)
+}
+
+type Meter float64
+
+func (m Meter) ToFeet() float64 {
+    return float64(m) * 3.28084
+}
+
+func (m Meter) Square() float64 {
+    return float64(m * m)
+}
+
+func main() {
+    temp := Celsius(25)
+    fmt.Println(temp.String())            // 25.0°C
+    fmt.Println(temp.ToFahrenheit())      // 77°F
+    
+    height := Meter(1.75)
+    fmt.Printf("Рост: %.2f футов\n", height.ToFeet())
+}
+```
+
+### Практический пример: Прямоугольник
+
+```go
+package main
+
+import "fmt"
+
+type Rectangle struct {
+    width  float64
+    height float64
+}
+
+// Площадь
+func (r Rectangle) Area() float64 {
+    return r.width * r.height
+}
+
+// Периметр
+func (r Rectangle) Perimeter() float64 {
+    return 2 * (r.width + r.height)
+}
+
+// Является ли квадратом
+func (r Rectangle) IsSquare() bool {
+    return r.width == r.height
+}
+
+// Форматированный вывод
+func (r Rectangle) String() string {
+    return fmt.Sprintf("Rectangle(%.1f x %.1f)", r.width, r.height)
+}
+
+// Масштабирование (возвращает новый прямоугольник)
+func (r Rectangle) Scale(factor float64) Rectangle {
+    return Rectangle{
+        width:  r.width * factor,
+        height: r.height * factor,
+    }
+}
+
+func main() {
+    rect := Rectangle{width: 10, height: 5}
+    
+    fmt.Println(rect.String())
+    fmt.Println("Площадь:", rect.Area())
+    fmt.Println("Периметр:", rect.Perimeter())
+    fmt.Println("Квадрат?", rect.IsSquare())
+    
+    bigRect := rect.Scale(2)
+    fmt.Println("Увеличенный:", bigRect.String())
+}
+```
+
+### Методы с несколькими получателями
+
+```go
+package main
+
+import "fmt"
+
+type Point struct {
+    x, y float64
+}
+
+// Расстояние до другой точки
+func (p Point) DistanceTo(other Point) float64 {
+    dx := p.x - other.x
+    dy := p.y - other.y
+    return math.Sqrt(dx*dx + dy*dy)
+}
+
+// Перемещение (возвращает новую точку)
+func (p Point) Move(dx, dy float64) Point {
+    return Point{p.x + dx, p.y + dy}
+}
+
+// Проверка равенства
+func (p Point) Equals(other Point) bool {
+    return p.x == other.x && p.y == other.y
+}
+
+import "math"
+
+func main() {
+    p1 := Point{0, 0}
+    p2 := Point{3, 4}
+    
+    fmt.Printf("Расстояние от %v до %v: %.2f\n", p1, p2, p1.DistanceTo(p2))
+    
+    p3 := p1.Move(5, 5)
+    fmt.Println("После перемещения:", p3)
+}
+```
+
+### Цепочка вызовов методов
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+type StringBuilder struct {
+    value string
+}
+
+func (sb StringBuilder) Append(s string) StringBuilder {
+    return StringBuilder{sb.value + s}
+}
+
+func (sb StringBuilder) AppendLine(s string) StringBuilder {
+    return StringBuilder{sb.value + s + "\n"}
+}
+
+func (sb StringBuilder) ToUpper() StringBuilder {
+    return StringBuilder{strings.ToUpper(sb.value)}
+}
+
+func (sb StringBuilder) String() string {
+    return sb.value
+}
+
+func main() {
+    sb := StringBuilder{}
+    
+    // Цепочка вызовов
+    result := sb.
+        Append("Hello, ").
+        Append("World!").
+        ToUpper().
+        String()
+    
+    fmt.Println(result)  // HELLO, WORLD!
+}
+```
+
+### Методы для встроенных структур
+
+```go
+package main
+
+import "fmt"
+
+type Engine struct {
+    horsepower int
+}
+
+func (e Engine) Start() {
+    fmt.Println("Двигатель запущен! Мощность:", e.horsepower, "л.с.")
+}
+
+type Car struct {
+    brand string
+    Engine  // встроенная структура
+}
+
+// Метод Car
+func (c Car) Info() {
+    fmt.Println("Автомобиль:", c.brand)
+}
+
+func main() {
+    car := Car{
+        brand:  "Toyota",
+        Engine: Engine{horsepower: 150},
+    }
+    
+    car.Info()    // метод Car
+    car.Start()   // метод Engine (продвигается)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Метод изменяет копию, а не оригинал
+
+```go
+type Counter struct {
+    value int
+}
+
+// ❌ НЕПРАВИЛЬНО — получатель по значению
+func (c Counter) Increment() {
+    c.value++  // изменяется только копия!
+}
+
+// ✅ ПРАВИЛЬНО — получатель по указателю (см. следующий урок)
+func (c *Counter) Increment() {
+    c.value++  // изменяется оригинал
+}
+```
+
+### 2. Метод для неэкспортированного типа в другом пакете
+
+```go
+// В пакете mypackage
+type myType struct {  // приватный тип
+    value int
+}
+
+// ❌ Этот метод недоступен извне пакета
+func (m myType) Print() {
+    fmt.Println(m.value)
+}
+```
+
+### 3. Попытка определить метод для встроенного типа
+
+```go
+// ❌ НЕПРАВИЛЬНО — нельзя для int
+func (i int) Double() int {
+    return i * 2
+}
+
+// ✅ ПРАВИЛЬНО — создаём псевдоним
+type MyInt int
+
+func (i MyInt) Double() MyInt {
+    return i * 2
+}
+```
+
+### 4. Конфликт имён методов при встраивании
+
+```go
+type A struct{}
+func (A) Print() { fmt.Println("A") }
+
+type B struct{}
+func (B) Print() { fmt.Println("B") }
+
+type C struct {
+    A
+    B
+}
+
+// ❌ c.Print() — ambiguous selector
+
+// ✅ Явно указываем
+c := C{}
+c.A.Print()
+c.B.Print()
+```
+
+### 5. Забыли про nil получатель
+
+```go
+type Person struct {
+    name string
+}
+
+func (p Person) Print() {
+    fmt.Println(p.name)
+}
+
+// ❌ НЕПРАВИЛЬНО — panic при nil указателе
+var p *Person
+p.Print()  // panic!
+
+// ✅ ПРАВИЛЬНО — проверяем nil
+if p != nil {
+    p.Print()
+}
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Простой метод</Title>
+<Prompt>
+Создайте метод Greet() для Person.
+</Prompt>
+<Hints>
+- `func (p Person) Greet() {...}`
+- Получатель в скобках перед именем метода
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct { Name string }
+
+// Создайте метод Greet
+
+func main() {
+    p := Person{"Alice"}
+    p.Greet()
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Привет, я Alice!
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Метод с параметром</Title>
+<Prompt>
+Создайте метод SayTo(other string) для Person.
+</Prompt>
+<Hints>
+- Параметр после имени метода
+- `func (p Person) SayTo(other string) {...}`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct { Name string }
+
+// Создайте метод SayTo
+
+func main() {
+    p := Person{"Alice"}
+    p.SayTo("Bob")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Alice говорит Bob: Привет!
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Метод с возвратом</Title>
+<Prompt>
+Создайте метод Area() для Rectangle.
+</Prompt>
+<Hints>
+- `func (r Rectangle) Area() int {...}`
+- return r.Width * r.Height
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Rectangle struct { Width, Height int }
+
+// Создайте метод Area
+
+func main() {
+    r := Rectangle{5, 3}
+    fmt.Println("Площадь 5x3:", r.Area())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Площадь 5x3: 15
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Несколько методов</Title>
+<Prompt>
+Создайте методы Area() и Perimeter() для Rectangle.
+</Prompt>
+<Hints>
+- Методы независимы друг от друга
+- Каждый со своим получателем
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Rectangle struct { Width, Height int }
+
+// Создайте методы Area и Perimeter
+
+func main() {
+    r := Rectangle{6, 4}
+    fmt.Println("Прямоугольник 6x4:")
+    fmt.Println("Площадь:", r.Area())
+    fmt.Println("Периметр:", r.Perimeter())
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Прямоугольник 6x4:
+Площадь: 24
+Периметр: 20
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Цепочка методов</Title>
+<Prompt>
+Создайте Builder с цепочкой методов SetName и SetAge.
+</Prompt>
+<Hints>
+- `return b` для цепочки
+- `b.SetName("Alice").SetAge(25).Build()`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct { Name string; Age int }
+type Builder struct { name string; age int }
+
+// Создайте методы SetName, SetAge, Build
+
+func main() {
+    p := (&Builder{}).SetName("Alice").SetAge(25).Build()
+    fmt.Println("Персона:", p)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Персона: {Alice 25}
+</ExpectedOutput>
+</Task>

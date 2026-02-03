@@ -1,0 +1,679 @@
+# Введение в интерфейсы Go
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Интерфейс** — набор сигнатур методов, определяющий контракт поведения
+2. **Неявная реализация** — тип реализует интерфейс автоматически, если имеет все нужные методы
+3. **Абстракция** — интерфейсы позволяют работать с разными типами через общий API
+4. **Полиморфизм** — один интерфейс, разные реализации
+5. **Пустой интерфейс** `interface{}` или `any` — может содержать значение любого типа
+</Overview>
+
+<Theory>
+### Что такое интерфейс?
+
+**Интерфейс** — это контракт: набор методов, которые тип должен реализовать. Интерфейс описывает **поведение**, а не данные.
+
+```go
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+```
+
+Любой тип с методом `Write([]byte) (int, error)` реализует `Writer`.
+
+### Неявная реализация — уникальность Go
+
+В других языках (Java, C#) нужно явно указывать `implements`:
+
+```java
+// Java
+class MyWriter implements Writer { ... }
+```
+
+В Go — **ничего указывать не нужно**:
+
+```go
+type MyWriter struct{}
+
+func (w MyWriter) Write(p []byte) (int, error) {
+    // реализация
+    return len(p), nil
+}
+
+// MyWriter автоматически реализует Writer!
+```
+
+### Почему неявная реализация крута?
+
+1. **Ретроактивность** — можно добавить интерфейс для существующего типа без его изменения
+2. **Слабая связанность** — пакет A не должен знать о пакете B
+3. **Маленькие интерфейсы** — поощряет создание узких интерфейсов
+
+### Полиморфизм через интерфейсы
+
+```go
+func Save(w Writer, data []byte) {
+    w.Write(data)  // работает с ЛЮБЫМ Writer
+}
+
+Save(os.Stdout, data)     // файл
+Save(httpResponse, data)  // HTTP ответ
+Save(buffer, data)        // буфер в памяти
+```
+
+Одна функция работает с разными типами — это **полиморфизм**.
+
+### Маленькие интерфейсы — философия Go
+
+В Go приветствуются **маленькие** интерфейсы:
+
+```go
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+type ReadWriter interface {
+    Reader
+    Writer
+}
+```
+
+**Правило:** "Принимай интерфейсы, возвращай конкретные типы"
+
+### Пустой интерфейс (interface{} / any)
+
+`interface{}` не требует никаких методов — его реализует **любой тип**:
+
+```go
+var x interface{}
+x = 42
+x = "hello"
+x = []int{1, 2, 3}
+```
+
+Используется для:
+- Функции, принимающие любые данные (`fmt.Println`)
+- JSON парсинг
+- Generics до Go 1.18
+
+С Go 1.18 можно писать `any` вместо `interface{}`.
+
+### nil интерфейс vs nil указатель
+
+Осторожно с nil:
+
+```go
+var w Writer = nil  // интерфейс nil
+fmt.Println(w == nil)  // true
+
+var p *MyWriter = nil
+w = p  // интерфейс НЕ nil! (тип есть, значение nil)
+fmt.Println(w == nil)  // false!
+```
+</Theory>
+
+<Syntax>
+### Определение интерфейса
+
+```go
+type InterfaceName interface {
+    Method1(param Type) ReturnType
+    Method2()
+}
+```
+
+### Реализация интерфейса (неявная)
+
+```go
+type MyType struct{}
+
+// MyType теперь реализует InterfaceName
+func (m MyType) Method1(param Type) ReturnType { ... }
+func (m MyType) Method2() { ... }
+```
+
+### Переменная интерфейса
+
+```go
+var i InterfaceName
+i = MyType{}  // присваиваем реализацию
+i.Method1(value)
+```
+
+### Пустой интерфейс
+
+```go
+var anything interface{}
+anything = 42
+anything = "hello"
+anything = []int{1, 2, 3}
+
+// или с Go 1.18+
+var anything any
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый пример интерфейса
+
+```go
+package main
+
+import "fmt"
+
+// Интерфейс — определяет КОНТРАКТ
+type Speaker interface {
+    Speak() string
+}
+
+// Структуры, реализующие интерфейс
+type Dog struct {
+    Name string
+}
+
+type Cat struct {
+    Name string
+}
+
+// Dog реализует Speaker
+func (d Dog) Speak() string {
+    return d.Name + " says: Woof!"
+}
+
+// Cat реализует Speaker
+func (c Cat) Speak() string {
+    return c.Name + " says: Meow!"
+}
+
+// Функция принимает ИНТЕРФЕЙС, а не конкретный тип
+func MakeSound(s Speaker) {
+    fmt.Println(s.Speak())
+}
+
+func main() {
+    dog := Dog{Name: "Rex"}
+    cat := Cat{Name: "Whiskers"}
+    
+    MakeSound(dog)  // Rex says: Woof!
+    MakeSound(cat)  // Whiskers says: Meow!
+    
+    // Срез интерфейсов
+    animals := []Speaker{dog, cat}
+    for _, animal := range animals {
+        fmt.Println(animal.Speak())
+    }
+}
+```
+
+### Интерфейс с несколькими методами
+
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+// Интерфейс фигуры
+type Shape interface {
+    Area() float64
+    Perimeter() float64
+}
+
+// Прямоугольник
+type Rectangle struct {
+    Width, Height float64
+}
+
+func (r Rectangle) Area() float64 {
+    return r.Width * r.Height
+}
+
+func (r Rectangle) Perimeter() float64 {
+    return 2 * (r.Width + r.Height)
+}
+
+// Круг
+type Circle struct {
+    Radius float64
+}
+
+func (c Circle) Area() float64 {
+    return math.Pi * c.Radius * c.Radius
+}
+
+func (c Circle) Perimeter() float64 {
+    return 2 * math.Pi * c.Radius
+}
+
+// Функция работает с любой фигурой
+func PrintInfo(s Shape) {
+    fmt.Printf("Площадь: %.2f, Периметр: %.2f\n", s.Area(), s.Perimeter())
+}
+
+func main() {
+    rect := Rectangle{Width: 10, Height: 5}
+    circle := Circle{Radius: 7}
+    
+    PrintInfo(rect)    // Площадь: 50.00, Периметр: 30.00
+    PrintInfo(circle)  // Площадь: 153.94, Периметр: 43.98
+}
+```
+
+### Пустой интерфейс
+
+```go
+package main
+
+import "fmt"
+
+// Функция принимает ЛЮБОЙ тип
+func PrintAnything(value interface{}) {
+    fmt.Printf("Type: %T, Value: %v\n", value, value)
+}
+
+// С Go 1.18+ можно использовать any
+func PrintAny(value any) {
+    fmt.Printf("Type: %T, Value: %v\n", value, value)
+}
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func main() {
+    PrintAnything(42)
+    PrintAnything("Hello")
+    PrintAnything(3.14)
+    PrintAnything([]int{1, 2, 3})
+    PrintAnything(Person{"Tom", 30})
+    
+    // Срез любых значений
+    data := []interface{}{1, "two", 3.0, true}
+    for _, v := range data {
+        fmt.Println(v)
+    }
+}
+```
+
+### Полиморфизм
+
+```go
+package main
+
+import "fmt"
+
+type Vehicle interface {
+    Move() string
+}
+
+type Car struct{ Model string }
+type Bike struct{ Brand string }
+type Plane struct{ Name string }
+
+func (c Car) Move() string   { return c.Model + " drives on road" }
+func (b Bike) Move() string  { return b.Brand + " rides on path" }
+func (p Plane) Move() string { return p.Name + " flies in sky" }
+
+func main() {
+    // Массив транспортных средств
+    vehicles := []Vehicle{
+        Car{Model: "Tesla"},
+        Bike{Brand: "Giant"},
+        Plane{Name: "Boeing"},
+    }
+    
+    // Полиморфизм: один метод, разное поведение
+    for _, v := range vehicles {
+        fmt.Println(v.Move())
+    }
+}
+```
+
+### Практический пример: Логгер
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+// Интерфейс логгера
+type Logger interface {
+    Log(message string)
+}
+
+// Консольный логгер
+type ConsoleLogger struct{}
+
+func (l ConsoleLogger) Log(message string) {
+    fmt.Printf("[%s] %s\n", time.Now().Format("15:04:05"), message)
+}
+
+// Файловый логгер (имитация)
+type FileLogger struct {
+    Filename string
+}
+
+func (l FileLogger) Log(message string) {
+    fmt.Printf("[FILE:%s] %s\n", l.Filename, message)
+}
+
+// Приложение использует интерфейс Logger
+type App struct {
+    logger Logger
+}
+
+func (a *App) DoWork() {
+    a.logger.Log("Starting work...")
+    // ... работа ...
+    a.logger.Log("Work completed!")
+}
+
+func main() {
+    // Можно легко переключить логгер
+    app1 := App{logger: ConsoleLogger{}}
+    app1.DoWork()
+    
+    app2 := App{logger: FileLogger{Filename: "app.log"}}
+    app2.DoWork()
+}
+```
+
+### Интерфейс nil
+
+```go
+package main
+
+import "fmt"
+
+type Printer interface {
+    Print()
+}
+
+func main() {
+    var p Printer  // nil интерфейс
+    
+    fmt.Println(p == nil)  // true
+    
+    // p.Print()  // PANIC: nil pointer dereference
+    
+    // Безопасная проверка
+    if p != nil {
+        p.Print()
+    } else {
+        fmt.Println("Printer is nil")
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Неполная реализация интерфейса
+
+```go
+type Writer interface {
+    Write(data []byte)
+    Close()
+}
+
+type MyWriter struct{}
+
+func (m MyWriter) Write(data []byte) {}
+// Забыли Close()!
+
+// ❌ ОШИБКА при компиляции
+var w Writer = MyWriter{}
+// cannot use MyWriter{} as Writer: missing method Close
+```
+
+### 2. Нельзя создать экземпляр интерфейса
+
+```go
+type Speaker interface {
+    Speak()
+}
+
+// ❌ НЕПРАВИЛЬНО
+// var s Speaker = Speaker{}  // не работает!
+
+// ✅ ПРАВИЛЬНО — присваиваем реализацию
+type Dog struct{}
+func (d Dog) Speak() {}
+
+var s Speaker = Dog{}
+```
+
+### 3. Вызов метода на nil интерфейсе
+
+```go
+type Doer interface {
+    Do()
+}
+
+var d Doer  // nil
+
+// ❌ PANIC
+// d.Do()
+
+// ✅ ПРАВИЛЬНО
+if d != nil {
+    d.Do()
+}
+```
+
+### 4. Путаница между nil интерфейсом и интерфейсом с nil значением
+
+```go
+type Animal interface {
+    Speak()
+}
+
+type Dog struct{}
+func (d *Dog) Speak() {}
+
+var dog *Dog = nil
+var animal Animal = dog
+
+// ⚠️ animal != nil, хотя dog == nil!
+fmt.Println(dog == nil)     // true
+fmt.Println(animal == nil)  // false (!!)
+
+// Интерфейс содержит (тип *Dog, значение nil)
+```
+
+### 5. Регистр методов
+
+```go
+type printer interface {
+    print()  // приватный метод — только в пакете
+}
+
+type Printer interface {
+    Print()  // публичный метод
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Базовая горутина</Title>
+<Prompt>
+Запустите функцию как горутину.
+</Prompt>
+<Hints>
+- go sayHello()
+- Без ожидания main завершится раньше
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Запустите горутину
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Запуск горутины
+Горутина выполняется
+Готово
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Несколько горутин</Title>
+<Prompt>
+Запустите несколько горутин параллельно.
+</Prompt>
+<Hints>
+- sync.WaitGroup для ожидания
+- wg.Add(1), wg.Done(), wg.Wait()
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+// TODO: Используйте sync.WaitGroup для синхронизации
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Запущено 3 горутины
+Все завершились
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: Горутина с параметром</Title>
+<Prompt>
+Передайте параметр в горутину правильно.
+</Prompt>
+<Hints>
+- go func(id int) { ... }(i)
+- Без передачи i будет race condition
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Горутины с ID: 0, 1, 2
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Анонимная горутина</Title>
+<Prompt>
+Используйте анонимную функцию как горутину.
+</Prompt>
+<Hints>
+- go func() { fmt.Println(...) }()
+- Скобки () в конце для вызова
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Запустите горутину
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Анонимная горутина выполнена
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: runtime.NumGoroutine</Title>
+<Prompt>
+Покажите количество активных горутин.
+</Prompt>
+<Hints>
+- import "runtime"
+- main — это тоже горутина
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "runtime"
+    "sync"
+    "time"
+)
+
+// TODO: Запустите горутину
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Горутин до: 1
+Горутин во время: 4
+Горутин после: 1
+</ExpectedOutput>
+</Task>

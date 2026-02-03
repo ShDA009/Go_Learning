@@ -1,0 +1,509 @@
+# Маршрутизация
+
+<Meta>
+reading_time: 5
+</Meta>
+
+<Overview>
+1. **HandleFunc** — привязка функции к маршруту
+2. **Handle** — привязка Handler интерфейса к маршруту
+3. **Паттерны** — `/` (корень), `/about` (точный путь)
+4. **Trailing slash** — `/api/` vs `/api`
+5. **http.ServeMux** — стандартный маршрутизатор
+</Overview>
+
+<Theory>
+### Что такое маршрутизация?
+
+**Маршрутизация** — сопоставление URL-путей с обработчиками:
+
+```
+GET /users     → usersHandler
+GET /about     → aboutHandler
+GET /api/items → apiHandler
+```
+
+### Стандартный маршрутизатор (ServeMux)
+
+```go
+mux := http.NewServeMux()
+mux.HandleFunc("/users", usersHandler)
+mux.HandleFunc("/about", aboutHandler)
+
+http.ListenAndServe(":8080", mux)
+```
+
+Или используйте глобальный:
+```go
+http.HandleFunc("/users", usersHandler)  // DefaultServeMux
+http.ListenAndServe(":8080", nil)        // nil = DefaultServeMux
+```
+
+### Правила сопоставления
+
+1. **Точное совпадение** приоритетнее
+2. **Trailing slash** — `/api/` ловит всё под `/api/`
+3. **Корень `/`** — ловит ВСЁ, что не совпало
+
+```go
+http.HandleFunc("/", rootHandler)         // /any, /path
+http.HandleFunc("/users", usersHandler)   // только /users
+http.HandleFunc("/api/", apiHandler)      // /api/, /api/users, /api/items
+```
+
+### Ограничения стандартного роутера
+
+- ❌ Нет параметров в URL (`/users/{id}`)
+- ❌ Нет фильтрации по HTTP-методу
+- ❌ Нет middleware
+- ❌ Нет регулярных выражений
+
+Для этого используйте `gorilla/mux` или другие роутеры.
+
+### Определение HTTP-метода вручную
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+        // GET логика
+    case http.MethodPost:
+        // POST логика
+    default:
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+    }
+}
+```
+
+### Обработка 404
+
+```go
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+    http.Error(w, "Page not found", http.StatusNotFound)
+}
+
+// Корень "/" ловит все не найденные
+http.HandleFunc("/", notFoundHandler)
+```
+</Theory>
+
+<Syntax>
+### HandleFunc
+
+```go
+http.HandleFunc(pattern string, handler func(ResponseWriter, *Request))
+```
+
+### Handle
+
+```go
+http.Handle(pattern string, handler Handler)
+```
+
+### Паттерны маршрутов
+
+```go
+"/"           // корень сайта (ловит все!)
+"/about"     // точный путь /about
+"/api/"      // /api/ и всё под ним (/api/users, /api/items)
+"/static/"   // для статических файлов
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовая маршрутизация
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "Home Page")
+    })
+    
+    http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "About Page")
+    })
+    
+    http.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "Contact Page")
+    })
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Handle с Handler интерфейсом
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+type PageHandler struct {
+    Title   string
+    Content string
+}
+
+func (h PageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "<h1>%s</h1><p>%s</p>", h.Title, h.Content)
+}
+
+func main() {
+    homePage := PageHandler{
+        Title:   "Welcome",
+        Content: "This is the home page",
+    }
+    
+    aboutPage := PageHandler{
+        Title:   "About Us",
+        Content: "Learn more about our company",
+    }
+    
+    http.Handle("/", homePage)
+    http.Handle("/about", aboutPage)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Отправка HTML файлов
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "index.html")
+    })
+    
+    http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "about.html")
+    })
+    
+    http.HandleFunc("/contact", func(w http.ResponseWriter, r *http.Request) {
+        http.ServeFile(w, r, "contact.html")
+    })
+    
+    fmt.Println("Server started at :8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Разделение по HTTP методам
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func usersHandler(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+        fmt.Fprint(w, "GET: List all users")
+    case http.MethodPost:
+        fmt.Fprint(w, "POST: Create user")
+    case http.MethodPut:
+        fmt.Fprint(w, "PUT: Update user")
+    case http.MethodDelete:
+        fmt.Fprint(w, "DELETE: Delete user")
+    default:
+        w.WriteHeader(http.StatusMethodNotAllowed)
+        fmt.Fprint(w, "Method not allowed")
+    }
+}
+
+func main() {
+    http.HandleFunc("/users", usersHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Кастомный ServeMux
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    mux := http.NewServeMux()
+    
+    mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "Home")
+    })
+    
+    mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprintf(w, "API endpoint: %s", r.URL.Path)
+    })
+    
+    // Используем кастомный mux
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+### Обработка 404
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        // "/" ловит все несуществующие пути
+        if r.URL.Path != "/" {
+            http.NotFound(w, r)
+            return
+        }
+        fmt.Fprint(w, "Home Page")
+    })
+    
+    http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "About Page")
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### API с версионированием
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+)
+
+func main() {
+    // API v1
+    http.HandleFunc("/api/v1/users", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]string{
+            "version": "1",
+            "data":    "users list v1",
+        })
+    })
+    
+    // API v2
+    http.HandleFunc("/api/v2/users", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "version": "2",
+            "data":    []string{"user1", "user2"},
+        })
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Middleware паттерн
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+)
+
+// Middleware для логирования
+func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        next(w, r)
+        log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+    }
+}
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "Home Page")
+}
+
+func aboutHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "About Page")
+}
+
+func main() {
+    http.HandleFunc("/", loggingMiddleware(homeHandler))
+    http.HandleFunc("/about", loggingMiddleware(aboutHandler))
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. "/" ловит все пути
+
+```go
+// ❌ "/" перехватывает /unknown
+http.HandleFunc("/", homeHandler)
+// Путь /unknown попадёт в homeHandler!
+
+// ✅ Проверяйте путь
+if r.URL.Path != "/" {
+    http.NotFound(w, r)
+    return
+}
+```
+
+### 2. Trailing slash имеет значение
+
+```go
+// ❌ /api и /api/ — разные маршруты!
+http.HandleFunc("/api", apiHandler)
+// Путь /api/users НЕ попадёт сюда
+
+// ✅ Используйте /api/ для подпутей
+http.HandleFunc("/api/", apiHandler)
+// /api/users попадёт сюда
+```
+
+### 3. Порядок регистрации
+
+```go
+// Стандартный mux выбирает самый специфичный маршрут
+// Порядок регистрации не важен
+
+http.HandleFunc("/", home)
+http.HandleFunc("/about", about)
+// /about попадёт в about, не в home
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Fiber framework</Title>
+<Prompt>
+Используйте Fiber.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Fiber: app := fiber.New(); app.Get(\"/\", handler)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Fiber: app := fiber.New(); app.Get("/", handler)
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Fiber Context</Title>
+<Prompt>
+Работа с fiber.Ctx.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Fiber Ctx: c.JSON(data), c.SendString(\"text\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Fiber Ctx: c.JSON(data), c.SendString("text")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Fiber параметры</Title>
+<Prompt>
+Получите параметры.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Параметры: c.Params(\"id\"), c.Query(\"name\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Параметры: c.Params("id"), c.Query("name")
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Fiber BodyParser</Title>
+<Prompt>
+Парсинг тела запроса.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Парсинг: c.BodyParser(&data)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Парсинг: c.BodyParser(&data)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: Fiber производительность</Title>
+<Prompt>
+Особенности производительности Fiber.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Fiber: построен на fasthttp, высокая производительность")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Fiber: построен на fasthttp, высокая производительность
+</ExpectedOutput>
+</Task>

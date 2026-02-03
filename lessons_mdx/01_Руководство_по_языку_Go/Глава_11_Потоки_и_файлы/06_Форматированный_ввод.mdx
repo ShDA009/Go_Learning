@@ -1,0 +1,621 @@
+# Форматированный ввод (Fscan, Fscanf, Fscanln)
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **fmt.Fscan** — чтение из io.Reader без форматирования
+2. **fmt.Fscanln** — чтение до конца строки
+3. **fmt.Fscanf** — чтение с форматной строкой
+4. **Указатели** — данные считываются в переменные через `&`
+5. **Разделители** — пробелы и переводы строк по умолчанию
+</Overview>
+
+<Theory>
+### Fscan — зеркало Fprint
+
+Как `Fprint` пишет в io.Writer, так `Fscan` читает из io.Reader:
+
+```go
+// Из файла
+fmt.Fscan(file, &name, &age)
+
+// Из строки
+reader := strings.NewReader("John 30")
+fmt.Fscan(reader, &name, &age)
+
+// Из сети
+fmt.Fscan(conn, &request)
+```
+
+### Три функции Fscan
+
+| Функция | Поведение |
+|---------|-----------|
+| `Fscan` | Читает значения, разделённые пробелами |
+| `Fscanln` | Читает до конца строки |
+| `Fscanf` | Читает по форматной строке |
+
+### Как работает Fscan?
+
+```go
+var name string
+var age int
+
+// Ввод: "John 30"
+fmt.Fscan(reader, &name, &age)
+// name = "John", age = 30
+```
+
+**Важно:** Передаём **указатели** (`&`) на переменные!
+
+### Fscanln — остановка на переводе строки
+
+```go
+// Ввод: "John 30\nJane 25"
+
+fmt.Fscanln(r, &name, &age)  // John, 30
+fmt.Fscanln(r, &name, &age)  // Jane, 25
+```
+
+### Fscanf — форматное чтение
+
+```go
+// Ввод: "User:John Age:30"
+fmt.Fscanf(reader, "User:%s Age:%d", &name, &age)
+```
+
+Текст в формате должен **точно совпадать** с вводом.
+
+### Обработка ошибок
+
+```go
+n, err := fmt.Fscan(reader, &x, &y)
+if err != nil {
+    if err == io.EOF {
+        // Конец данных
+    } else {
+        // Ошибка парсинга
+    }
+}
+fmt.Println("Прочитано переменных:", n)
+```
+
+### Типичные ловушки
+
+**1. Строка читается до пробела:**
+```go
+// Ввод: "Hello World"
+fmt.Fscan(r, &s)  // s = "Hello", не "Hello World"
+```
+
+**2. Пробелы "съедаются":**
+```go
+// Ввод: "  42"
+fmt.Fscan(r, &n)  // n = 42 (пробелы игнорируются)
+```
+
+**3. Несовпадение типа:**
+```go
+// Ввод: "hello"
+var n int
+fmt.Fscan(r, &n)  // ОШИБКА!
+```
+
+### Когда использовать что?
+
+| Задача | Инструмент |
+|--------|------------|
+| Простой парсинг | `Fscan` |
+| Построчное чтение | `bufio.Scanner` |
+| Сложный формат | `Fscanf` или ручной парсинг |
+| CSV/JSON | Специализированные пакеты |
+</Theory>
+
+<Syntax>
+### Функции ввода
+
+```go
+// Чтение разделённых пробелами значений
+fmt.Fscan(r io.Reader, a ...interface{}) (n int, err error)
+
+// Чтение до конца строки
+fmt.Fscanln(r io.Reader, a ...interface{}) (n int, err error)
+
+// Чтение с форматной строкой
+fmt.Fscanf(r io.Reader, format string, a ...interface{}) (n int, err error)
+```
+
+### Спецификаторы (те же что для printf)
+
+```go
+%d   // целое число
+%f   // float
+%s   // строка (до пробела)
+%c   // символ
+%t   // boolean
+%v   // значение по умолчанию
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Чтение из файла с Fscan
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Создаём файл с данными
+    os.WriteFile("data.txt", []byte("Alice 25 Moscow"), 0644)
+    
+    file, err := os.Open("data.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    var name string
+    var age int
+    var city string
+    
+    // Fscan читает значения, разделённые пробелами
+    n, err := fmt.Fscan(file, &name, &age, &city)
+    if err != nil {
+        fmt.Println("Scan error:", err)
+        return
+    }
+    
+    fmt.Printf("Read %d values: %s, %d, %s\n", n, name, age, city)
+}
+```
+
+### Чтение построчно с Fscanln
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+func main() {
+    // Файл с данными по строкам
+    data := `Tom 24
+Bob 30
+Alice 25`
+    os.WriteFile("people.txt", []byte(data), 0644)
+    
+    file, err := os.Open("people.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    for {
+        var name string
+        var age int
+        
+        // Fscanln читает до конца строки
+        _, err := fmt.Fscanln(file, &name, &age)
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            fmt.Println("Error:", err)
+            break
+        }
+        
+        fmt.Printf("Name: %s, Age: %d\n", name, age)
+    }
+}
+```
+
+### Форматированное чтение с Fscanf
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+type Person struct {
+    Name   string
+    Age    int
+    Weight float64
+}
+
+func main() {
+    // Данные в определённом формате
+    data := `Tom 24 68.50
+Bob 30 75.20
+Alice 25 55.80`
+    os.WriteFile("formatted.txt", []byte(data), 0644)
+    
+    file, err := os.Open("formatted.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    var people []Person
+    
+    for {
+        var p Person
+        
+        // Fscanf использует форматную строку
+        _, err := fmt.Fscanf(file, "%s %d %f\n", &p.Name, &p.Age, &p.Weight)
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            fmt.Println("Parse error:", err)
+            break
+        }
+        
+        people = append(people, p)
+    }
+    
+    fmt.Println("People:")
+    for _, p := range people {
+        fmt.Printf("  %+v\n", p)
+    }
+}
+```
+
+### Чтение с консоли
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    var name string
+    var age int
+    
+    fmt.Print("Enter name: ")
+    fmt.Fscan(os.Stdin, &name)
+    
+    fmt.Print("Enter age: ")
+    fmt.Fscan(os.Stdin, &age)
+    
+    fmt.Printf("Hello, %s! You are %d years old.\n", name, age)
+}
+```
+
+### Чтение из строки (strings.Reader)
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    input := "42 3.14 hello true"
+    reader := strings.NewReader(input)
+    
+    var i int
+    var f float64
+    var s string
+    var b bool
+    
+    fmt.Fscan(reader, &i, &f, &s, &b)
+    
+    fmt.Printf("int: %d\n", i)
+    fmt.Printf("float: %f\n", f)
+    fmt.Printf("string: %s\n", s)
+    fmt.Printf("bool: %t\n", b)
+}
+```
+
+### Чтение CSV-подобных данных
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+    "strings"
+)
+
+type Product struct {
+    ID    int
+    Name  string
+    Price float64
+}
+
+func main() {
+    // CSV-подобные данные (разделитель - запятая)
+    data := `1,Apple,1.50
+2,Banana,0.75
+3,Orange,2.00`
+    os.WriteFile("products.csv", []byte(data), 0644)
+    
+    file, _ := os.Open("products.csv")
+    defer file.Close()
+    
+    var products []Product
+    
+    for {
+        var p Product
+        
+        // Формат с запятыми
+        _, err := fmt.Fscanf(file, "%d,%s,%f\n", &p.ID, &p.Name, &p.Price)
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            // Читаем строку вручную для имён с пробелами
+            fmt.Println("Parse error:", err)
+            break
+        }
+        
+        products = append(products, p)
+    }
+    
+    fmt.Println("Products:")
+    for _, p := range products {
+        fmt.Printf("  %d. %s - $%.2f\n", p.ID, p.Name, p.Price)
+    }
+}
+```
+
+### Чтение конфигурационного файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+type Config struct {
+    Host     string
+    Port     int
+    Debug    bool
+    MaxConns int
+}
+
+func main() {
+    // Простой конфиг-файл
+    data := `host localhost
+port 8080
+debug true
+maxconns 100`
+    os.WriteFile("config.txt", []byte(data), 0644)
+    
+    file, _ := os.Open("config.txt")
+    defer file.Close()
+    
+    config := Config{}
+    
+    for {
+        var key string
+        var value interface{}
+        
+        _, err := fmt.Fscan(file, &key)
+        if err == io.EOF {
+            break
+        }
+        
+        switch key {
+        case "host":
+            fmt.Fscanln(file, &config.Host)
+        case "port":
+            fmt.Fscanln(file, &config.Port)
+        case "debug":
+            fmt.Fscanln(file, &config.Debug)
+        case "maxconns":
+            fmt.Fscanln(file, &config.MaxConns)
+        default:
+            fmt.Fscanln(file, &value) // skip unknown
+        }
+    }
+    
+    fmt.Printf("Config: %+v\n", config)
+}
+```
+
+### Scan vs Scanf — разница в поведении
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+func main() {
+    // Fscan разделяет по пробелам и переводам строк
+    r1 := strings.NewReader("a b c\nd e f")
+    var s1, s2, s3, s4 string
+    fmt.Fscan(r1, &s1, &s2, &s3, &s4)
+    fmt.Printf("Fscan: %q %q %q %q\n", s1, s2, s3, s4)
+    // Output: Fscan: "a" "b" "c" "d"
+    
+    // Fscanln останавливается на переводе строки
+    r2 := strings.NewReader("a b c\nd e f")
+    var ss1, ss2, ss3 string
+    fmt.Fscanln(r2, &ss1, &ss2, &ss3)
+    fmt.Printf("Fscanln: %q %q %q\n", ss1, ss2, ss3)
+    // Output: Fscanln: "a" "b" "c"
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли передать указатель
+
+```go
+var name string
+// ❌ Не указатель
+fmt.Fscan(file, name)
+
+// ✅ Указатель
+fmt.Fscan(file, &name)
+```
+
+### 2. Несоответствие формата данным
+
+```go
+// Данные: "Alice 25"
+// ❌ Неверный формат
+fmt.Fscanf(file, "%d %s", &age, &name)  // ожидает число первым
+
+// ✅ Правильный порядок
+fmt.Fscanf(file, "%s %d", &name, &age)
+```
+
+### 3. Пробелы в строках
+
+```go
+// Данные: "New York 1000000"
+var city string
+var population int
+fmt.Fscan(file, &city, &population)  // city = "New", не "New York"!
+
+// ✅ Используйте bufio.Scanner для полных строк
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: Layout шаблон</Title>
+<Prompt>
+Создайте базовый layout.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Layout: {{define \"base\"}}...{{template \"content\" .}}...{{end}}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Layout: {{define "base"}}...{{template "content" .}}...{{end}}
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: block для defaults</Title>
+<Prompt>
+Используйте block для значений по умолчанию.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Block: {{block \"sidebar\" .}}default content{{end}}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Block: {{block "sidebar" .}}default content{{end}}
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Компонент header</Title>
+<Prompt>
+Выделите header в отдельный шаблон.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Компонент: {{define \"header\"}}...{{end}}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Компонент: {{define "header"}}...{{end}}
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Передача данных в компонент</Title>
+<Prompt>
+Передайте данные во вложенный шаблон.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Данные: {{template \"nav\" .User}}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Данные: {{template "nav" .User}}
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: Организация шаблонов</Title>
+<Prompt>
+Структура папки templates.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("templates/")
+    fmt.Println("  layout.html")
+    fmt.Println("  partials/")
+    fmt.Println("    header.html")
+    fmt.Println("  pages/")
+    fmt.Println("    home.html")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+templates/
+  layout.html
+  partials/
+    header.html
+  pages/
+    home.html
+</ExpectedOutput>
+</Task>

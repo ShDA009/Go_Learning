@@ -1,0 +1,181 @@
+# Нагрузочное тестирование и сбор профилей
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. Нагрузка нужна, чтобы увидеть реальные bottleneck’и (pprof/trace без нагрузки часто бесполезны)
+2. **Минимум**: `hey`/`wrk` для быстрых прогонов; **сценарии**: `k6`
+3. Смотрите не “среднее”, а **percentiles** (p95/p99), ошибки и saturation
+4. Под нагрузкой снимайте **CPU/heap** профили и сравнивайте “до/после”
+5. Делайте прогоны **повторяемыми**: фиксируйте конфиг, данные, окружение, версию бинарника
+</Overview>
+
+<Theory>
+### Что именно измерять
+
+Для backend‑сервиса обычно достаточно RED/USE подходов:
+- **Rate**: RPS
+- **Errors**: % ошибок, типы ошибок
+- **Duration**: p50/p95/p99 latency
+- **Utilization/Saturation**: CPU, память, GC, пул БД, блокировки
+
+Нагрузочный прогон без целей — бессмысленен. До старта определите:
+- целевую нагрузку (например, 200 RPS)
+- SLO (например, p99 < 200ms, ошибки < 0.1%)
+
+### Почему “локальный прогон” может врать
+
+Локально всё может быть быстрее/медленнее из‑за:
+- другого железа
+- отсутствия сетевых задержек
+- разницы в данных (пустая БД vs реальная)
+- кэширования (warm/cold cache)
+
+Старайтесь держать окружение теста максимально стабильным и близким к целевому.
+</Theory>
+
+<Syntax>
+### Быстрый прогон: hey
+
+```bash
+# 10k запросов, 100 конкурентных
+hey -n 10000 -c 100 "http://localhost:8080/api/v1/users"
+```
+
+### Дольше и реалистичнее: wrk
+
+```bash
+wrk -t4 -c100 -d30s "http://localhost:8080/api/v1/users"
+```
+
+### Сценарии: k6
+
+```bash
+k6 run script.js
+```
+
+### Сбор pprof под нагрузкой
+
+```bash
+# пока идёт нагрузка
+curl -s "http://localhost:6060/debug/pprof/profile?seconds=30" -o cpu.pprof
+curl -s "http://localhost:6060/debug/pprof/heap" -o heap.pprof
+
+go tool pprof -http=":0" cpu.pprof
+```
+</Syntax>
+
+<Examples>
+### Пример: минимальный k6 сценарий
+
+```javascript
+import http from 'k6/http';
+import { sleep } from 'k6';
+
+export const options = {
+  vus: 50,
+  duration: '30s',
+  thresholds: {
+    http_req_failed: ['rate<0.01'],
+    http_req_duration: ['p(95)<200', 'p(99)<400'],
+  },
+};
+
+export default function () {
+  http.get('http://localhost:8080/api/v1/users');
+  sleep(0.1);
+}
+```
+
+### Пример: сравнение “до/после”
+
+1. Сделайте прогон “до” и сохраните:
+   - результаты нагрузки (вывод `hey/wrk/k6`)
+   - CPU профиль `cpu.before.pprof`
+2. Внесите одну оптимизацию (например, убрали лишние аллокации)
+3. Повторите прогон “после” и сравните:
+   - p95/p99 latency
+   - CPU usage
+   - аллокации (heap/allocs)
+</Examples>
+
+<Pitfalls>
+1. **Нет прогрева**: первый прогон часто включает компиляцию шаблонов/прогрев кэшей/JIT‑подобные эффекты
+2. **Слишком мало запросов**: статистика p99 становится шумной
+3. **Оптимизация на “среднее”**: улучшили average, а p99 стал хуже
+4. **Смешали изменения**: сделали 5 правок → не ясно, что помогло
+5. **Не контролируете БД**: узкое место в БД часто “маскирует” оптимизации приложения
+</Pitfalls>
+
+<Links>
+- `https://k6.io/docs/`
+- `https://github.com/rakyll/hey`
+- `https://github.com/wg/wrk`
+- `https://go.dev/blog/pprof`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Сформулируйте SLO для REST сервиса</Title>
+<Prompt>
+Выберите 2–3 метрики (например, p99 latency, % ошибок, RPS) и запишите конкретные численные цели для вашего capstone REST проекта.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("SLO: p99<..., errors<..., RPS>=...")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+SLO: p99<..., errors<..., RPS>=...
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Нагрузочный прогон + CPU профиль</Title>
+<Prompt>
+Сделайте прогон `hey/wrk/k6` и снимите CPU профиль на 30 секунд. В отчёте выпишите топ‑3 функций из `pprof top`.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("pprof top: 1) ... 2) ... 3) ...")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+pprof top: 1) ... 2) ... 3) ...
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Оптимизация одной точки</Title>
+<Prompt>
+Выберите одну “горячую” функцию/участок и оптимизируйте. Повторите прогон и покажите “до/после” по p95/p99 и/или CPU.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("до/после: что изменил и какой эффект")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+до/после: что изменил и какой эффект
+</ExpectedOutput>
+</Task>
+

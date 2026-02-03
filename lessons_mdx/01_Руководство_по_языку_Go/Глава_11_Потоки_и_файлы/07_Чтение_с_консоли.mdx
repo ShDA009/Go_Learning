@@ -1,0 +1,627 @@
+# Чтение с консоли
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **fmt.Scan** — чтение с stdin без форматирования
+2. **fmt.Scanln** — чтение до конца строки
+3. **fmt.Scanf** — форматированное чтение
+4. **bufio.Scanner** — построчное чтение с буферизацией
+5. **bufio.Reader** — гибкое чтение с разделителями
+</Overview>
+
+<Theory>
+### Способы чтения с консоли
+
+| Способ | Когда использовать |
+|--------|-------------------|
+| `fmt.Scan` | Простые значения |
+| `fmt.Scanln` | Значения до Enter |
+| `bufio.Scanner` | Построчно (рекомендуется) |
+| `bufio.Reader` | Полный контроль |
+
+### fmt.Scan — простейший вариант
+
+```go
+var name string
+var age int
+
+fmt.Print("Введите имя и возраст: ")
+fmt.Scan(&name, &age)
+// Ввод: John 30
+```
+
+**Проблема:** пробелы разделяют значения, нельзя ввести "John Doe".
+
+### fmt.Scanln — до конца строки
+
+```go
+fmt.Print("Имя: ")
+fmt.Scanln(&name)  // Enter завершает ввод
+```
+
+### bufio.Scanner — лучший выбор
+
+```go
+scanner := bufio.NewScanner(os.Stdin)
+
+fmt.Print("Введите строку: ")
+scanner.Scan()
+line := scanner.Text()  // вся строка включая пробелы!
+```
+
+**Преимущества:**
+- Читает всю строку
+- Удобная проверка ошибок
+- Эффективная буферизация
+
+### Чтение нескольких строк
+
+```go
+scanner := bufio.NewScanner(os.Stdin)
+
+fmt.Println("Введите строки (Ctrl+D для завершения):")
+for scanner.Scan() {
+    line := scanner.Text()
+    if line == "exit" {
+        break
+    }
+    fmt.Println("Вы ввели:", line)
+}
+```
+
+### bufio.Reader — для особых случаев
+
+```go
+reader := bufio.NewReader(os.Stdin)
+
+// Читать до определённого символа
+line, _ := reader.ReadString('\n')
+
+// Читать один символ
+char, _, _ := reader.ReadRune()
+```
+
+### Обработка ошибок ввода
+
+```go
+scanner := bufio.NewScanner(os.Stdin)
+
+if scanner.Scan() {
+    text := scanner.Text()
+    // обработка
+}
+
+if err := scanner.Err(); err != nil {
+    fmt.Fprintln(os.Stderr, "Ошибка чтения:", err)
+}
+```
+
+### Паттерн: интерактивный ввод
+
+```go
+scanner := bufio.NewScanner(os.Stdin)
+
+for {
+    fmt.Print("> ")
+    if !scanner.Scan() {
+        break
+    }
+    
+    cmd := scanner.Text()
+    switch cmd {
+    case "quit", "exit":
+        return
+    case "help":
+        showHelp()
+    default:
+        process(cmd)
+    }
+}
+```
+</Theory>
+
+<Syntax>
+### fmt функции для stdin
+
+```go
+fmt.Scan(&var1, &var2)           // чтение значений
+fmt.Scanln(&var1, &var2)         // чтение до \n
+fmt.Scanf("format", &var1)       // форматированное чтение
+```
+
+### bufio для консоли
+
+```go
+scanner := bufio.NewScanner(os.Stdin)
+reader := bufio.NewReader(os.Stdin)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Простое чтение с fmt.Scan
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var name string
+    var age int
+    
+    fmt.Print("Enter your name: ")
+    fmt.Scan(&name)
+    
+    fmt.Print("Enter your age: ")
+    fmt.Scan(&age)
+    
+    fmt.Printf("Hello, %s! You are %d years old.\n", name, age)
+}
+```
+
+### Чтение нескольких значений
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var a, b, c int
+    
+    fmt.Print("Enter three numbers (space-separated): ")
+    fmt.Scan(&a, &b, &c)
+    
+    fmt.Printf("Sum: %d\n", a+b+c)
+    fmt.Printf("Product: %d\n", a*b*c)
+}
+```
+
+### Чтение строки целиком с Scanln
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var firstName, lastName string
+    
+    fmt.Print("Enter first and last name: ")
+    fmt.Scanln(&firstName, &lastName)
+    
+    fmt.Printf("Full name: %s %s\n", firstName, lastName)
+}
+```
+
+### Форматированное чтение с Scanf
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var day, month, year int
+    
+    fmt.Print("Enter date (DD/MM/YYYY): ")
+    fmt.Scanf("%d/%d/%d", &day, &month, &year)
+    
+    fmt.Printf("Day: %d, Month: %d, Year: %d\n", day, month, year)
+}
+```
+
+### bufio.Scanner — построчное чтение
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    scanner := bufio.NewScanner(os.Stdin)
+    
+    fmt.Println("Enter lines (empty line to stop):")
+    
+    var lines []string
+    for scanner.Scan() {
+        text := scanner.Text()
+        if text == "" {
+            break
+        }
+        lines = append(lines, text)
+    }
+    
+    fmt.Println("\nYou entered:")
+    for i, line := range lines {
+        fmt.Printf("%d: %s\n", i+1, line)
+    }
+}
+```
+
+### bufio.Reader — гибкое чтение
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    
+    fmt.Print("Enter your full name: ")
+    
+    // ReadString читает до указанного разделителя
+    name, _ := reader.ReadString('\n')
+    name = strings.TrimSpace(name)
+    
+    fmt.Printf("Hello, %s!\n", name)
+}
+```
+
+### Чтение с валидацией
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+func readInt(reader *bufio.Reader, prompt string) (int, error) {
+    fmt.Print(prompt)
+    input, _ := reader.ReadString('\n')
+    input = strings.TrimSpace(input)
+    return strconv.Atoi(input)
+}
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    
+    for {
+        age, err := readInt(reader, "Enter your age: ")
+        if err != nil {
+            fmt.Println("Please enter a valid number!")
+            continue
+        }
+        if age < 0 || age > 150 {
+            fmt.Println("Please enter a realistic age!")
+            continue
+        }
+        
+        fmt.Printf("Your age is %d\n", age)
+        break
+    }
+}
+```
+
+### Меню выбора
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    
+    for {
+        fmt.Println("\n=== Menu ===")
+        fmt.Println("1. Say Hello")
+        fmt.Println("2. Show Time")
+        fmt.Println("3. Exit")
+        fmt.Print("Choose option: ")
+        
+        input, _ := reader.ReadString('\n')
+        input = strings.TrimSpace(input)
+        
+        switch input {
+        case "1":
+            fmt.Println("Hello, World!")
+        case "2":
+            fmt.Println("Time: Now!")
+        case "3":
+            fmt.Println("Goodbye!")
+            return
+        default:
+            fmt.Println("Unknown option")
+        }
+    }
+}
+```
+
+### Чтение пароля (скрытый ввод)
+
+```go
+package main
+
+import (
+    "fmt"
+    "syscall"
+
+    "golang.org/x/term"
+)
+
+func main() {
+    fmt.Print("Enter password: ")
+    
+    // Чтение без эхо (не показывает символы)
+    password, _ := term.ReadPassword(int(syscall.Stdin))
+    
+    fmt.Println()
+    fmt.Printf("Password length: %d\n", len(password))
+}
+
+// Примечание: требует go get golang.org/x/term
+```
+
+### Интерактивный калькулятор
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    
+    fmt.Println("Simple Calculator")
+    fmt.Println("Enter: number operator number (e.g., 5 + 3)")
+    fmt.Println("Type 'quit' to exit")
+    
+    for {
+        fmt.Print("> ")
+        input, _ := reader.ReadString('\n')
+        input = strings.TrimSpace(input)
+        
+        if input == "quit" {
+            break
+        }
+        
+        var a, b float64
+        var op string
+        
+        _, err := fmt.Sscanf(input, "%f %s %f", &a, &op, &b)
+        if err != nil {
+            fmt.Println("Invalid input. Use: number operator number")
+            continue
+        }
+        
+        var result float64
+        switch op {
+        case "+":
+            result = a + b
+        case "-":
+            result = a - b
+        case "*":
+            result = a * b
+        case "/":
+            if b == 0 {
+                fmt.Println("Error: division by zero")
+                continue
+            }
+            result = a / b
+        default:
+            fmt.Println("Unknown operator:", op)
+            continue
+        }
+        
+        fmt.Printf("Result: %v\n", result)
+    }
+}
+```
+
+### Подтверждение действия (y/n)
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+func confirm(reader *bufio.Reader, prompt string) bool {
+    for {
+        fmt.Printf("%s (y/n): ", prompt)
+        input, _ := reader.ReadString('\n')
+        input = strings.ToLower(strings.TrimSpace(input))
+        
+        switch input {
+        case "y", "yes":
+            return true
+        case "n", "no":
+            return false
+        default:
+            fmt.Println("Please answer 'y' or 'n'")
+        }
+    }
+}
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    
+    if confirm(reader, "Do you want to continue?") {
+        fmt.Println("Continuing...")
+    } else {
+        fmt.Println("Cancelled.")
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Остаточный \n в буфере
+
+```go
+var age int
+var name string
+
+fmt.Scan(&age)
+// ❌ После Scan остаётся \n, следующий Scanln прочитает пустую строку
+fmt.Scanln(&name)
+
+// ✅ Используйте Scanln везде или bufio.Reader
+```
+
+### 2. Пробелы прерывают чтение строки
+
+```go
+var fullName string
+fmt.Print("Enter name: ")
+fmt.Scan(&fullName)  // "John Smith" → fullName = "John"
+
+// ✅ Используйте bufio.Reader для строк с пробелами
+reader := bufio.NewReader(os.Stdin)
+fullName, _ := reader.ReadString('\n')
+```
+
+### 3. Игнорирование ошибок ввода
+
+```go
+// ❌ Ошибка игнорируется
+fmt.Scan(&value)
+
+// ✅ Проверяйте ошибку
+_, err := fmt.Scan(&value)
+if err != nil {
+    fmt.Println("Invalid input")
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: r.FormValue</Title>
+<Prompt>
+Получите значение из формы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Форма: r.FormValue(\"name\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Форма: r.FormValue("name")
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: r.ParseForm</Title>
+<Prompt>
+Распарсите данные формы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Парсинг: r.ParseForm(); r.Form[\"name\"]")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Парсинг: r.ParseForm(); r.Form["name"]
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Multipart форма</Title>
+<Prompt>
+Обработайте multipart/form-data.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Multipart: r.ParseMultipartForm(maxMemory)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Multipart: r.ParseMultipartForm(maxMemory)
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Загрузка файла</Title>
+<Prompt>
+Получите загруженный файл.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Файл: file, header, _ := r.FormFile(\"upload\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Файл: file, header, _ := r.FormFile("upload")
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Валидация формы</Title>
+<Prompt>
+Проверьте данные формы.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Валидация: if name == \"\" { errors = append(...) }")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Валидация: if name == "" { errors = append(...) }
+</ExpectedOutput>
+</Task>

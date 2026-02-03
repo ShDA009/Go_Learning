@@ -1,0 +1,760 @@
+# Карты (Maps) в Go
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. **Карта (map)** — структура данных "ключ-значение" (хеш-таблица, словарь)
+2. **Ссылочный тип** — карту нужно инициализировать перед использованием
+3. **Уникальные ключи** — каждый ключ может встречаться только один раз
+4. **Неупорядоченность** — порядок элементов не гарантирован
+5. **Быстрый доступ** — O(1) для чтения, записи и удаления
+</Overview>
+
+<Theory>
+### Что такое карта (map)?
+
+**Карта** (map, словарь, хеш-таблица) — структура данных, связывающая ключи со значениями. В других языках:
+- Python: `dict`
+- JavaScript: `object` или `Map`
+- Java: `HashMap`
+
+```go
+ages := map[string]int{
+    "Alice": 25,
+    "Bob":   30,
+}
+fmt.Println(ages["Alice"])  // 25
+```
+
+### Ключи и значения
+
+**Ключи** должны быть **сравнимыми** (comparable):
+- ✅ int, string, float, bool, struct (без срезов), указатели
+- ❌ срезы, map, функции
+
+**Значения** могут быть любого типа.
+
+### nil map — опасность!
+
+Неинициализированная карта = nil. Читать можно, писать нельзя:
+
+```go
+var m map[string]int  // nil
+
+v := m["key"]  // OK, v = 0 (нулевое значение)
+m["key"] = 1   // PANIC! assignment to entry in nil map
+```
+
+**Всегда инициализируйте карту:**
+```go
+m := make(map[string]int)
+// или
+m := map[string]int{}
+```
+
+### Чтение с проверкой существования
+
+Чтение несуществующего ключа возвращает нулевое значение:
+
+```go
+m := map[string]int{"a": 1}
+fmt.Println(m["b"])  // 0 (ключа нет, но ошибки нет)
+```
+
+Используйте "comma ok" идиому для проверки:
+
+```go
+value, ok := m["b"]
+if ok {
+    fmt.Println("Found:", value)
+} else {
+    fmt.Println("Not found")
+}
+
+// Или короче:
+if value, ok := m["b"]; ok {
+    fmt.Println("Found:", value)
+}
+```
+
+### Порядок не гарантирован
+
+При итерации порядок элементов **случайный**:
+
+```go
+m := map[string]int{"a": 1, "b": 2, "c": 3}
+
+for k, v := range m {
+    fmt.Println(k, v)  // порядок разный при каждом запуске!
+}
+```
+
+Если нужен порядок — отсортируйте ключи отдельно.
+
+### Карты — ссылочный тип
+
+Карта передаётся по ссылке (как срез):
+
+```go
+func modify(m map[string]int) {
+    m["new"] = 100  // изменит оригинал!
+}
+
+m := map[string]int{"a": 1}
+modify(m)
+fmt.Println(m["new"])  // 100
+```
+
+### Вложенные карты
+
+Карта значений-карт:
+
+```go
+users := map[string]map[string]int{
+    "Alice": {"score": 100, "level": 5},
+    "Bob":   {"score": 80, "level": 3},
+}
+fmt.Println(users["Alice"]["score"])  // 100
+```
+
+**Осторожно:** Вложенные карты нужно инициализировать:
+```go
+users["Charlie"] = make(map[string]int)  // сначала создать
+users["Charlie"]["score"] = 50           // потом писать
+```
+</Theory>
+
+<Syntax>
+### Объявление и создание
+
+```go
+var m map[KeyType]ValueType        // nil карта (нельзя писать!)
+m := map[string]int{}              // пустая карта
+m := map[string]int{"a": 1, "b": 2} // с инициализацией
+m := make(map[string]int)          // через make
+m := make(map[string]int, 100)     // с начальной ёмкостью
+```
+
+### Основные операции
+
+```go
+m[key] = value                     // запись/обновление
+value := m[key]                    // чтение
+value, ok := m[key]                // чтение с проверкой
+delete(m, key)                     // удаление
+len(m)                             // количество элементов
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Создание и базовые операции
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Создание карты с литералом
+    ages := map[string]int{
+        "Tom":   30,
+        "Alice": 25,
+        "Bob":   35,
+    }
+    
+    // Чтение
+    fmt.Println("Возраст Tom:", ages["Tom"])  // 30
+    
+    // Запись нового элемента
+    ages["Kate"] = 28
+    
+    // Обновление существующего
+    ages["Tom"] = 31
+    
+    // Удаление
+    delete(ages, "Bob")
+    
+    // Вывод всей карты
+    fmt.Println(ages)  // map[Alice:25 Kate:28 Tom:31]
+}
+```
+
+### Проверка наличия ключа
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    users := map[string]int{
+        "admin":  1,
+        "editor": 2,
+    }
+    
+    // Способ 1: проверка через ok
+    if id, ok := users["admin"]; ok {
+        fmt.Println("admin найден, ID:", id)
+    }
+    
+    // Способ 2: проверка отсутствия
+    if _, ok := users["guest"]; !ok {
+        fmt.Println("guest не найден")
+    }
+    
+    // ❌ ОПАСНО: чтение несуществующего ключа возвращает нулевое значение
+    fmt.Println("guest ID:", users["guest"])  // 0 (нулевое значение int)
+    
+    // Как отличить "ключ со значением 0" от "ключа нет"?
+    users["viewer"] = 0  // явно установили 0
+    
+    id1 := users["viewer"]  // 0
+    id2 := users["unknown"] // тоже 0!
+    
+    // Только с ok можно различить
+    _, ok1 := users["viewer"]  // ok1 = true
+    _, ok2 := users["unknown"] // ok2 = false
+    fmt.Println("viewer exists:", ok1, "unknown exists:", ok2)
+}
+```
+
+### Перебор карты
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    scores := map[string]int{
+        "Alice": 95,
+        "Bob":   87,
+        "Carol": 92,
+    }
+    
+    // Перебор ключей и значений
+    for name, score := range scores {
+        fmt.Printf("%s: %d\n", name, score)
+    }
+    
+    // Только ключи
+    fmt.Println("\nТолько имена:")
+    for name := range scores {
+        fmt.Println(name)
+    }
+    
+    // ⚠️ Порядок перебора СЛУЧАЙНЫЙ при каждом запуске!
+}
+```
+
+### Карта как множество (Set)
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Используем map[T]bool как множество
+    set := make(map[string]bool)
+    
+    // Добавление элементов
+    set["apple"] = true
+    set["banana"] = true
+    set["orange"] = true
+    
+    // Проверка наличия
+    if set["apple"] {
+        fmt.Println("apple в множестве")
+    }
+    
+    if !set["grape"] {
+        fmt.Println("grape НЕ в множестве")
+    }
+    
+    // Удаление
+    delete(set, "banana")
+    
+    // Более эффективный вариант: map[T]struct{}
+    efficientSet := make(map[string]struct{})
+    efficientSet["item1"] = struct{}{}
+    
+    if _, exists := efficientSet["item1"]; exists {
+        fmt.Println("item1 существует")
+    }
+}
+```
+
+### Подсчёт элементов
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    text := "hello world hello go hello"
+    words := []string{"hello", "world", "hello", "go", "hello"}
+    
+    // Подсчёт слов
+    counter := make(map[string]int)
+    for _, word := range words {
+        counter[word]++  // автоматически инициализируется нулём
+    }
+    
+    fmt.Println("Частота слов:")
+    for word, count := range counter {
+        fmt.Printf("  %s: %d\n", word, count)
+    }
+    
+    // Подсчёт символов
+    charCount := make(map[rune]int)
+    for _, char := range text {
+        charCount[char]++
+    }
+    
+    fmt.Println("\nЧастота символов:")
+    for char, count := range charCount {
+        fmt.Printf("  '%c': %d\n", char, count)
+    }
+}
+```
+
+### Карта с составными значениями
+
+```go
+package main
+
+import "fmt"
+
+type User struct {
+    Name  string
+    Email string
+    Age   int
+}
+
+func main() {
+    // Карта со структурами
+    users := map[int]User{
+        1: {Name: "Tom", Email: "tom@mail.com", Age: 30},
+        2: {Name: "Alice", Email: "alice@mail.com", Age: 25},
+    }
+    
+    // Добавление
+    users[3] = User{Name: "Bob", Email: "bob@mail.com", Age: 35}
+    
+    // Чтение
+    if user, ok := users[1]; ok {
+        fmt.Printf("User 1: %s (%s)\n", user.Name, user.Email)
+    }
+    
+    // ⚠️ Нельзя изменять поля структуры напрямую!
+    // users[1].Age = 31  // ОШИБКА: cannot assign to struct field
+    
+    // ✅ Нужно заменить всю структуру
+    user := users[1]
+    user.Age = 31
+    users[1] = user
+    
+    // Или использовать указатели
+    usersPtr := map[int]*User{
+        1: {Name: "Tom", Age: 30},
+    }
+    usersPtr[1].Age = 31  // OK
+}
+```
+
+### Вложенные карты
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Карта карт: страна -> город -> население
+    population := map[string]map[string]int{
+        "Russia": {
+            "Moscow":      12000000,
+            "SPb":         5000000,
+            "Novosibirsk": 1600000,
+        },
+        "USA": {
+            "New York":   8400000,
+            "Los Angeles": 4000000,
+        },
+    }
+    
+    // Чтение
+    fmt.Println("Москва:", population["Russia"]["Moscow"])
+    
+    // Добавление нового города
+    population["Russia"]["Kazan"] = 1200000
+    
+    // Добавление новой страны
+    population["Germany"] = map[string]int{
+        "Berlin": 3700000,
+    }
+    
+    // Безопасное чтение вложенной карты
+    if cities, ok := population["France"]; ok {
+        fmt.Println("Париж:", cities["Paris"])
+    } else {
+        fmt.Println("Франция не найдена")
+    }
+}
+```
+
+### Сравнение карт
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func main() {
+    m1 := map[string]int{"a": 1, "b": 2}
+    m2 := map[string]int{"a": 1, "b": 2}
+    m3 := map[string]int{"a": 1, "b": 3}
+    
+    // Нельзя сравнивать карты напрямую: m1 == m2 — ошибка
+    
+    // Используем reflect.DeepEqual
+    fmt.Println("m1 == m2:", reflect.DeepEqual(m1, m2))  // true
+    fmt.Println("m1 == m3:", reflect.DeepEqual(m1, m3))  // false
+    
+    // Или своя функция
+    equal := func(a, b map[string]int) bool {
+        if len(a) != len(b) {
+            return false
+        }
+        for k, v := range a {
+            if bv, ok := b[k]; !ok || bv != v {
+                return false
+            }
+        }
+        return true
+    }
+    
+    fmt.Println("equal(m1, m2):", equal(m1, m2))
+}
+```
+
+### Группировка данных
+
+```go
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+    City string
+}
+
+func main() {
+    people := []Person{
+        {"Tom", 30, "Moscow"},
+        {"Alice", 25, "SPb"},
+        {"Bob", 35, "Moscow"},
+        {"Kate", 28, "SPb"},
+        {"John", 32, "Moscow"},
+    }
+    
+    // Группировка по городу
+    byCity := make(map[string][]Person)
+    for _, p := range people {
+        byCity[p.City] = append(byCity[p.City], p)
+    }
+    
+    fmt.Println("Люди по городам:")
+    for city, persons := range byCity {
+        fmt.Printf("\n%s:\n", city)
+        for _, p := range persons {
+            fmt.Printf("  - %s (%d лет)\n", p.Name, p.Age)
+        }
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Запись в nil карту
+
+```go
+// ❌ НЕПРАВИЛЬНО — panic: assignment to entry in nil map
+var m map[string]int
+m["key"] = 1
+
+// ✅ ПРАВИЛЬНО — инициализируем карту
+m := make(map[string]int)
+m["key"] = 1
+
+// или
+m := map[string]int{}
+m["key"] = 1
+```
+
+### 2. Неправильная проверка наличия ключа
+
+```go
+m := map[string]int{"zero": 0}
+
+// ❌ НЕПРАВИЛЬНО — нельзя отличить "нет ключа" от "значение 0"
+if m["zero"] == 0 {
+    // Это может быть как "ключ со значением 0", так и "ключа нет"
+}
+
+// ✅ ПРАВИЛЬНО
+if val, ok := m["zero"]; ok {
+    fmt.Println("Ключ существует, значение:", val)
+}
+```
+
+### 3. Изменение поля структуры в карте
+
+```go
+type User struct {
+    Name string
+    Age  int
+}
+
+m := map[string]User{
+    "tom": {Name: "Tom", Age: 30},
+}
+
+// ❌ НЕПРАВИЛЬНО — cannot assign to struct field
+// m["tom"].Age = 31
+
+// ✅ ПРАВИЛЬНО — заменяем всю структуру
+user := m["tom"]
+user.Age = 31
+m["tom"] = user
+
+// Или используем указатели
+m2 := map[string]*User{
+    "tom": {Name: "Tom", Age: 30},
+}
+m2["tom"].Age = 31  // OK
+```
+
+### 4. Ожидание порядка при итерации
+
+```go
+m := map[string]int{"a": 1, "b": 2, "c": 3}
+
+// ❌ НЕПРАВИЛЬНО — порядок случайный!
+for k, v := range m {
+    fmt.Println(k, v)  // может быть любой порядок
+}
+
+// ✅ ПРАВИЛЬНО — сортируем ключи
+import "sort"
+
+keys := make([]string, 0, len(m))
+for k := range m {
+    keys = append(keys, k)
+}
+sort.Strings(keys)
+
+for _, k := range keys {
+    fmt.Println(k, m[k])  // a:1, b:2, c:3
+}
+```
+
+### 5. Конкурентный доступ без синхронизации
+
+```go
+// ❌ ОПАСНО — гонка данных
+m := make(map[string]int)
+go func() { m["a"] = 1 }()
+go func() { m["b"] = 2 }()
+
+// ✅ ПРАВИЛЬНО — используем sync.Map или мьютекс
+import "sync"
+
+var mu sync.Mutex
+m := make(map[string]int)
+
+go func() {
+    mu.Lock()
+    m["a"] = 1
+    mu.Unlock()
+}()
+```
+
+### 6. Ключ — несравнимый тип
+
+```go
+// ❌ НЕПРАВИЛЬНО — срезы нельзя использовать как ключи
+// m := make(map[[]int]string)  // ошибка компиляции
+
+// ✅ ПРАВИЛЬНО — используем массивы или преобразуем в строку
+m := make(map[[3]int]string)  // массив фиксированной длины OK
+m[[3]int{1, 2, 3}] = "value"
+
+// Или преобразуем срез в строку
+import "fmt"
+key := fmt.Sprint([]int{1, 2, 3})  // "[1 2 3]"
+m2 := make(map[string]string)
+m2[key] = "value"
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Создание карты</Title>
+<Prompt>
+Создайте карту возрастов.
+</Prompt>
+<Hints>
+- `m := map[string]int{"Alice": 25}`
+- Доступ: `m["Alice"]`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ages := map[string]int{
+        "Alice": 25,
+        "Bob":   30,
+    }
+    fmt.Println("Alice:", ages["Alice"])
+    fmt.Println("Bob:", ages["Bob"])
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Alice: 25
+Bob: 30
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: make для карт</Title>
+<Prompt>
+Создайте карту через make и добавьте элементы.
+</Prompt>
+<Hints>
+- `m := make(map[string]int)`
+- `m["key"] = value`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    counts := make(map[string]int)
+    counts["a"] = 1
+    counts["b"] = 2
+    fmt.Println("Счётчики:", counts)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Счётчики: map[a:1 b:2]
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Проверка ключа</Title>
+<Prompt>
+Проверьте существование ключа в карте.
+</Prompt>
+<Hints>
+- `_, ok := m["key"]`
+- ok = true если ключ есть
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ages := map[string]int{"Alice": 25, "Bob": 30}
+    _, ok1 := ages["Alice"]
+    _, ok2 := ages["Charlie"]
+    fmt.Println("Alice существует:", ok1)
+    fmt.Println("Charlie существует:", ok2)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Alice существует: true
+Charlie существует: false
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Удаление из карты</Title>
+<Prompt>
+Удалите элемент из карты через delete.
+</Prompt>
+<Hints>
+- `delete(m, "key")`
+- delete не возвращает ничего
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    m := map[string]int{"a": 1, "b": 2, "c": 3}
+    fmt.Println("До:", m)
+    delete(m, "b")
+    fmt.Println("После:", m)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: map[a:1 b:2 c:3]
+После: map[a:1 c:3]
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Перебор карты</Title>
+<Prompt>
+Переберите карту и выведите отсортированные ключи.
+</Prompt>
+<Hints>
+- Порядок в map случайный
+- Соберите ключи в срез и sort.Strings
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "sort"
+)
+
+func main() {
+    m := map[string]int{"c": 3, "a": 1, "b": 2}
+    // Отсортируйте и выведите
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Алфавитный порядок:
+a: 1
+b: 2
+c: 3
+</ExpectedOutput>
+</Task>

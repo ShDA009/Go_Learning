@@ -1,0 +1,966 @@
+# Практические паттерны с Generics
+
+<Meta>
+reading_time: 12
+</Meta>
+
+<Overview>
+1. **Функциональные паттерны** — Map, Filter, Reduce для срезов
+2. **Builder pattern** — типобезопасные конструкторы
+3. **Repository pattern** — обобщённые репозитории
+4. **Type-safe events** — типизированные события
+5. **Sync-примитивы** — обобщённые конкурентные структуры
+</Overview>
+
+<Theory>
+### Функциональные паттерны: Map, Filter, Reduce
+
+Эти функции пришли из функционального программирования и очень популярны в других языках (JavaScript, Python, Java Streams). До Generics в Go их было сложно реализовать универсально.
+
+**Map** — преобразование каждого элемента:
+```
+[1, 2, 3] → map(x => x * 2) → [2, 4, 6]
+```
+
+**Filter** — выбор элементов по условию:
+```
+[1, 2, 3, 4, 5] → filter(x => x > 2) → [3, 4, 5]
+```
+
+**Reduce** — свёртка в одно значение:
+```
+[1, 2, 3, 4] → reduce(sum) → 10
+```
+
+Теперь с Generics это легко:
+```go
+func Map[T, R any](slice []T, fn func(T) R) []R { ... }
+func Filter[T any](slice []T, predicate func(T) bool) []T { ... }
+func Reduce[T, R any](slice []T, initial R, fn func(R, T) R) R { ... }
+```
+
+### Result Type — обработка ошибок
+
+Вместо возврата `(value, error)` можно использовать тип Result:
+
+```go
+type Result[T any] struct {
+    value T
+    err   error
+}
+
+func (r Result[T]) IsOk() bool {
+    return r.err == nil
+}
+
+func (r Result[T]) Unwrap() T {
+    if r.err != nil {
+        panic(r.err)
+    }
+    return r.value
+}
+```
+
+Это позволяет писать цепочки вызовов:
+```go
+result := FetchUser(1).
+    Map(func(u User) Profile { return u.Profile }).
+    Filter(func(p Profile) bool { return p.Active })
+```
+
+### Optional Type — опциональные значения
+
+Когда значение может отсутствовать:
+
+```go
+type Optional[T any] struct {
+    value   T
+    present bool
+}
+
+func Some[T any](value T) Optional[T] {
+    return Optional[T]{value: value, present: true}
+}
+
+func None[T any]() Optional[T] {
+    return Optional[T]{present: false}
+}
+```
+
+Использование:
+```go
+func FindUser(id int) Optional[User] {
+    user, found := db.Get(id)
+    if !found {
+        return None[User]()
+    }
+    return Some(user)
+}
+```
+
+### Generic Repository Pattern
+
+Типичный паттерн для работы с базой данных:
+
+```go
+type Repository[T any, ID comparable] interface {
+    FindByID(id ID) (T, error)
+    FindAll() ([]T, error)
+    Save(entity T) error
+    Delete(id ID) error
+}
+```
+
+Одна реализация для всех сущностей:
+```go
+type GenericRepository[T any, ID comparable] struct {
+    db *sql.DB
+    tableName string
+}
+
+// UserRepository
+userRepo := NewRepository[User, int](db, "users")
+
+// ProductRepository  
+productRepo := NewRepository[Product, string](db, "products")
+```
+
+### Concurrent-safe структуры
+
+Generic-версия потокобезопасного кэша:
+
+```go
+type Cache[K comparable, V any] struct {
+    mu    sync.RWMutex
+    items map[K]V
+}
+
+func (c *Cache[K, V]) Get(key K) (V, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    val, ok := c.items[key]
+    return val, ok
+}
+
+func (c *Cache[K, V]) Set(key K, value V) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.items[key] = value
+}
+```
+
+### Когда использовать эти паттерны?
+
+| Паттерн | Используйте когда |
+|---------|-------------------|
+| Map/Filter/Reduce | Трансформация коллекций |
+| Result | Цепочка операций с ошибками |
+| Optional | Значение может отсутствовать |
+| Repository | Работа с БД для разных сущностей |
+| Generic Cache | Кэширование разных типов данных |
+
+### Не переусложняйте!
+
+Generics — мощный инструмент, но не нужно использовать их везде:
+
+```go
+// ❌ Слишком сложно
+func Process[T any, R any, F func(T) R](items []T, fn F) []R
+
+// ✅ Проще и понятнее
+func Process[T, R any](items []T, fn func(T) R) []R
+```
+
+**Правило:** если Generic-код сложнее для понимания, чем дублирование — не используйте Generics.
+</Theory>
+
+<Examples>
+кода
+
+### Пример 1: Функциональные операции над срезами
+
+```go
+package slices
+
+import "cmp"
+
+// Map — преобразование элементов
+func Map[T, R any](slice []T, fn func(T) R) []R {
+    result := make([]R, len(slice))
+    for i, v := range slice {
+        result[i] = fn(v)
+    }
+    return result
+}
+
+// Filter — фильтрация элементов
+func Filter[T any](slice []T, predicate func(T) bool) []T {
+    result := make([]T, 0)
+    for _, v := range slice {
+        if predicate(v) {
+            result = append(result, v)
+        }
+    }
+    return result
+}
+
+// Reduce — свёртка
+func Reduce[T, R any](slice []T, initial R, fn func(R, T) R) R {
+    result := initial
+    for _, v := range slice {
+        result = fn(result, v)
+    }
+    return result
+}
+
+// Find — поиск первого элемента
+func Find[T any](slice []T, predicate func(T) bool) (T, bool) {
+    for _, v := range slice {
+        if predicate(v) {
+            return v, true
+        }
+    }
+    var zero T
+    return zero, false
+}
+
+// Any — хотя бы один удовлетворяет условию
+func Any[T any](slice []T, predicate func(T) bool) bool {
+    for _, v := range slice {
+        if predicate(v) {
+            return true
+        }
+    }
+    return false
+}
+
+// All — все удовлетворяют условию
+func All[T any](slice []T, predicate func(T) bool) bool {
+    for _, v := range slice {
+        if !predicate(v) {
+            return false
+        }
+    }
+    return true
+}
+
+// GroupBy — группировка
+func GroupBy[T any, K comparable](slice []T, keyFn func(T) K) map[K][]T {
+    result := make(map[K][]T)
+    for _, v := range slice {
+        key := keyFn(v)
+        result[key] = append(result[key], v)
+    }
+    return result
+}
+
+// Partition — разделение на две группы
+func Partition[T any](slice []T, predicate func(T) bool) (match, noMatch []T) {
+    for _, v := range slice {
+        if predicate(v) {
+            match = append(match, v)
+        } else {
+            noMatch = append(noMatch, v)
+        }
+    }
+    return
+}
+
+// FlatMap — преобразование с разворачиванием
+func FlatMap[T, R any](slice []T, fn func(T) []R) []R {
+    result := make([]R, 0)
+    for _, v := range slice {
+        result = append(result, fn(v)...)
+    }
+    return result
+}
+
+// Distinct — уникальные элементы
+func Distinct[T comparable](slice []T) []T {
+    seen := make(map[T]bool)
+    result := make([]T, 0)
+    for _, v := range slice {
+        if !seen[v] {
+            seen[v] = true
+            result = append(result, v)
+        }
+    }
+    return result
+}
+
+// SortBy — сортировка по ключу
+func SortBy[T any, K cmp.Ordered](slice []T, keyFn func(T) K) {
+    for i := 0; i < len(slice)-1; i++ {
+        for j := i + 1; j < len(slice); j++ {
+            if keyFn(slice[j]) < keyFn(slice[i]) {
+                slice[i], slice[j] = slice[j], slice[i]
+            }
+        }
+    }
+}
+```
+
+```go
+// Использование
+package main
+
+import "fmt"
+
+type Person struct {
+    Name string
+    Age  int
+    City string
+}
+
+func main() {
+    people := []Person{
+        {"Alice", 30, "NYC"},
+        {"Bob", 25, "LA"},
+        {"Charlie", 35, "NYC"},
+        {"Diana", 28, "LA"},
+    }
+    
+    // Получить имена
+    names := Map(people, func(p Person) string {
+        return p.Name
+    })
+    fmt.Println("Names:", names)  // [Alice Bob Charlie Diana]
+    
+    // Фильтр по возрасту
+    young := Filter(people, func(p Person) bool {
+        return p.Age < 30
+    })
+    fmt.Println("Young:", young)
+    
+    // Сумма возрастов
+    totalAge := Reduce(people, 0, func(sum int, p Person) int {
+        return sum + p.Age
+    })
+    fmt.Println("Total age:", totalAge)  // 118
+    
+    // Группировка по городу
+    byCity := GroupBy(people, func(p Person) string {
+        return p.City
+    })
+    fmt.Println("By city:", byCity)
+    
+    // Сортировка по возрасту
+    SortBy(people, func(p Person) int {
+        return p.Age
+    })
+    fmt.Println("Sorted:", people)
+}
+```
+
+### Пример 2: Generic Repository
+
+```go
+package repository
+
+import (
+    "context"
+    "errors"
+    "sync"
+)
+
+var ErrNotFound = errors.New("entity not found")
+
+// Entity — базовый интерфейс сущности
+type Entity interface {
+    GetID() int
+}
+
+// Repository — обобщённый репозиторий
+type Repository[T Entity] interface {
+    Create(ctx context.Context, entity T) error
+    GetByID(ctx context.Context, id int) (T, error)
+    Update(ctx context.Context, entity T) error
+    Delete(ctx context.Context, id int) error
+    List(ctx context.Context) ([]T, error)
+}
+
+// InMemoryRepository — реализация в памяти
+type InMemoryRepository[T Entity] struct {
+    mu   sync.RWMutex
+    data map[int]T
+}
+
+func NewInMemoryRepository[T Entity]() *InMemoryRepository[T] {
+    return &InMemoryRepository[T]{
+        data: make(map[int]T),
+    }
+}
+
+func (r *InMemoryRepository[T]) Create(ctx context.Context, entity T) error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    r.data[entity.GetID()] = entity
+    return nil
+}
+
+func (r *InMemoryRepository[T]) GetByID(ctx context.Context, id int) (T, error) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    
+    entity, ok := r.data[id]
+    if !ok {
+        var zero T
+        return zero, ErrNotFound
+    }
+    return entity, nil
+}
+
+func (r *InMemoryRepository[T]) Update(ctx context.Context, entity T) error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    if _, ok := r.data[entity.GetID()]; !ok {
+        return ErrNotFound
+    }
+    r.data[entity.GetID()] = entity
+    return nil
+}
+
+func (r *InMemoryRepository[T]) Delete(ctx context.Context, id int) error {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    
+    if _, ok := r.data[id]; !ok {
+        return ErrNotFound
+    }
+    delete(r.data, id)
+    return nil
+}
+
+func (r *InMemoryRepository[T]) List(ctx context.Context) ([]T, error) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    
+    result := make([]T, 0, len(r.data))
+    for _, entity := range r.data {
+        result = append(result, entity)
+    }
+    return result, nil
+}
+```
+
+```go
+// Использование
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+func (u User) GetID() int { return u.ID }
+
+func main() {
+    ctx := context.Background()
+    
+    userRepo := NewInMemoryRepository[User]()
+    
+    // Create
+    userRepo.Create(ctx, User{ID: 1, Name: "Alice", Email: "alice@example.com"})
+    userRepo.Create(ctx, User{ID: 2, Name: "Bob", Email: "bob@example.com"})
+    
+    // Read
+    user, err := userRepo.GetByID(ctx, 1)
+    if err == nil {
+        fmt.Printf("Found: %+v\n", user)
+    }
+    
+    // List
+    users, _ := userRepo.List(ctx)
+    fmt.Printf("All users: %+v\n", users)
+}
+```
+
+### Пример 3: Type-safe Event Bus
+
+```go
+package events
+
+import (
+    "sync"
+)
+
+// Event — обобщённое событие
+type Event[T any] struct {
+    Data T
+}
+
+// Handler — обработчик события
+type Handler[T any] func(Event[T])
+
+// EventBus — типобезопасная шина событий
+type EventBus[T any] struct {
+    mu       sync.RWMutex
+    handlers []Handler[T]
+}
+
+func NewEventBus[T any]() *EventBus[T] {
+    return &EventBus[T]{
+        handlers: make([]Handler[T], 0),
+    }
+}
+
+func (eb *EventBus[T]) Subscribe(handler Handler[T]) {
+    eb.mu.Lock()
+    defer eb.mu.Unlock()
+    eb.handlers = append(eb.handlers, handler)
+}
+
+func (eb *EventBus[T]) Publish(data T) {
+    eb.mu.RLock()
+    handlers := make([]Handler[T], len(eb.handlers))
+    copy(handlers, eb.handlers)
+    eb.mu.RUnlock()
+    
+    event := Event[T]{Data: data}
+    for _, handler := range handlers {
+        handler(event)
+    }
+}
+
+func (eb *EventBus[T]) PublishAsync(data T) {
+    eb.mu.RLock()
+    handlers := make([]Handler[T], len(eb.handlers))
+    copy(handlers, eb.handlers)
+    eb.mu.RUnlock()
+    
+    event := Event[T]{Data: data}
+    for _, handler := range handlers {
+        go handler(event)
+    }
+}
+```
+
+```go
+// Использование
+type OrderCreated struct {
+    OrderID int
+    UserID  int
+    Amount  float64
+}
+
+type UserRegistered struct {
+    UserID int
+    Email  string
+}
+
+func main() {
+    // Шина для событий заказов
+    orderBus := NewEventBus[OrderCreated]()
+    
+    orderBus.Subscribe(func(e Event[OrderCreated]) {
+        fmt.Printf("Order %d created for user %d\n", e.Data.OrderID, e.Data.UserID)
+    })
+    
+    orderBus.Subscribe(func(e Event[OrderCreated]) {
+        fmt.Printf("Sending email for order %d\n", e.Data.OrderID)
+    })
+    
+    orderBus.Publish(OrderCreated{OrderID: 1, UserID: 100, Amount: 99.99})
+    
+    // Шина для событий регистрации
+    userBus := NewEventBus[UserRegistered]()
+    
+    userBus.Subscribe(func(e Event[UserRegistered]) {
+        fmt.Printf("Welcome email to %s\n", e.Data.Email)
+    })
+    
+    userBus.Publish(UserRegistered{UserID: 1, Email: "user@example.com"})
+}
+```
+
+### Пример 4: Generic Pool
+
+```go
+package pool
+
+import (
+    "sync"
+)
+
+// Pool — обобщённый пул объектов
+type Pool[T any] struct {
+    pool    sync.Pool
+    factory func() T
+    reset   func(T)
+}
+
+func NewPool[T any](factory func() T, reset func(T)) *Pool[T] {
+    p := &Pool[T]{
+        factory: factory,
+        reset:   reset,
+    }
+    p.pool.New = func() interface{} {
+        return factory()
+    }
+    return p
+}
+
+func (p *Pool[T]) Get() T {
+    return p.pool.Get().(T)
+}
+
+func (p *Pool[T]) Put(item T) {
+    if p.reset != nil {
+        p.reset(item)
+    }
+    p.pool.Put(item)
+}
+```
+
+```go
+// Использование
+import "bytes"
+
+func main() {
+    // Пул буферов
+    bufferPool := NewPool(
+        func() *bytes.Buffer {
+            return new(bytes.Buffer)
+        },
+        func(b *bytes.Buffer) {
+            b.Reset()
+        },
+    )
+    
+    buf := bufferPool.Get()
+    buf.WriteString("Hello, World!")
+    fmt.Println(buf.String())
+    bufferPool.Put(buf)
+    
+    // Пул срезов
+    slicePool := NewPool(
+        func() []byte {
+            return make([]byte, 0, 1024)
+        },
+        func(s []byte) {
+            // Очищаем срез
+        },
+    )
+    
+    slice := slicePool.Get()
+    slice = append(slice, []byte("data")...)
+    slicePool.Put(slice[:0])
+}
+```
+
+### Пример 5: Builder Pattern
+
+```go
+package builder
+
+// Builder — обобщённый строитель
+type Builder[T any] struct {
+    value T
+}
+
+func NewBuilder[T any](initial T) *Builder[T] {
+    return &Builder[T]{value: initial}
+}
+
+func (b *Builder[T]) With(modifier func(*T)) *Builder[T] {
+    modifier(&b.value)
+    return b
+}
+
+func (b *Builder[T]) Build() T {
+    return b.value
+}
+
+// Конкретный пример
+type Config struct {
+    Host     string
+    Port     int
+    Timeout  int
+    Debug    bool
+    LogLevel string
+}
+
+func DefaultConfig() Config {
+    return Config{
+        Host:     "localhost",
+        Port:     8080,
+        Timeout:  30,
+        Debug:    false,
+        LogLevel: "info",
+    }
+}
+
+func main() {
+    config := NewBuilder(DefaultConfig()).
+        With(func(c *Config) { c.Host = "0.0.0.0" }).
+        With(func(c *Config) { c.Port = 3000 }).
+        With(func(c *Config) { c.Debug = true }).
+        Build()
+    
+    fmt.Printf("%+v\n", config)
+}
+```
+
+### Пример 6: Cache с TTL
+
+```go
+package cache
+
+import (
+    "sync"
+    "time"
+)
+
+type cacheItem[V any] struct {
+    value      V
+    expiration time.Time
+}
+
+type Cache[K comparable, V any] struct {
+    mu    sync.RWMutex
+    items map[K]cacheItem[V]
+    ttl   time.Duration
+}
+
+func NewCache[K comparable, V any](ttl time.Duration) *Cache[K, V] {
+    c := &Cache[K, V]{
+        items: make(map[K]cacheItem[V]),
+        ttl:   ttl,
+    }
+    
+    // Очистка устаревших
+    go c.cleanup()
+    
+    return c
+}
+
+func (c *Cache[K, V]) Set(key K, value V) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    
+    c.items[key] = cacheItem[V]{
+        value:      value,
+        expiration: time.Now().Add(c.ttl),
+    }
+}
+
+func (c *Cache[K, V]) Get(key K) (V, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    
+    item, ok := c.items[key]
+    if !ok || time.Now().After(item.expiration) {
+        var zero V
+        return zero, false
+    }
+    
+    return item.value, true
+}
+
+func (c *Cache[K, V]) Delete(key K) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    delete(c.items, key)
+}
+
+func (c *Cache[K, V]) cleanup() {
+    ticker := time.NewTicker(c.ttl / 2)
+    for range ticker.C {
+        c.mu.Lock()
+        now := time.Now()
+        for key, item := range c.items {
+            if now.After(item.expiration) {
+                delete(c.items, key)
+            }
+        }
+        c.mu.Unlock()
+    }
+}
+```
+
+### Пример 7: Pipe Pattern
+
+```go
+package pipe
+
+// Stage — этап обработки
+type Stage[In, Out any] func(In) Out
+
+// Pipe — цепочка обработки
+func Pipe[A, B, C any](
+    stage1 Stage[A, B],
+    stage2 Stage[B, C],
+) Stage[A, C] {
+    return func(input A) C {
+        return stage2(stage1(input))
+    }
+}
+
+// Pipe3 — три этапа
+func Pipe3[A, B, C, D any](
+    s1 Stage[A, B],
+    s2 Stage[B, C],
+    s3 Stage[C, D],
+) Stage[A, D] {
+    return func(input A) D {
+        return s3(s2(s1(input)))
+    }
+}
+```
+
+```go
+// Использование
+func main() {
+    // Этапы обработки
+    parseInt := func(s string) int {
+        n, _ := strconv.Atoi(s)
+        return n
+    }
+    
+    double := func(n int) int {
+        return n * 2
+    }
+    
+    toString := func(n int) string {
+        return fmt.Sprintf("Result: %d", n)
+    }
+    
+    // Собираем pipeline
+    process := Pipe3(parseInt, double, toString)
+    
+    result := process("21")
+    fmt.Println(result)  // Result: 42
+}
+```
+</Examples>
+
+<Task id="1" points="15">
+<Title>Задание 1: Generic Reduce</Title>
+<Prompt>
+Реализуйте функцию свёртки (reduce/fold).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте функцию согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Sum: 15
+Product: 120
+Sentence: Hello World Go
+Max: 5
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Lazy Initialization</Title>
+<Prompt>
+Создайте тип для ленивой инициализации.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Реализуйте решение согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Before first Get
+Loading config...
+Host: localhost
+Port: 8080
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Event Bus</Title>
+<Prompt>
+Реализуйте типизированную шину событий.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Реализуйте решение согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Send welcome email to Alice
+Log: user 1 created
+Process payment for order 100: $99.99
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Builder Pattern</Title>
+<Prompt>
+Создайте типобезопасный builder.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Реализуйте решение согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Server config: {Host:0.0.0.0 Port:3000 ReadTimeout:30 WriteTimeout:30 MaxConns:1000 Debug:true}
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Cache с TTL</Title>
+<Prompt>
+Создайте кэш с временем жизни записей.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Реализуйте решение согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Immediately: 42, ok=true
+After 50ms: 42, ok=true
+After 150ms: 0, ok=false
+</ExpectedOutput>
+</Task>

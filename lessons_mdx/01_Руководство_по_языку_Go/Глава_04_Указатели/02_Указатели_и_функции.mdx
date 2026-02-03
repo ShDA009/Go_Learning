@@ -1,0 +1,702 @@
+# Указатели и функции в Go
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. **Передача по значению** — по умолчанию Go копирует аргументы в функцию
+2. **Передача по указателю** — позволяет функции изменять оригинальные данные
+3. **Эффективность памяти** — передача указателя избегает копирования больших структур
+4. **Возврат указателя** — функция может вернуть указатель на созданный объект
+5. **Escape analysis** — Go автоматически определяет, где разместить данные (стек/куча)
+</Overview>
+
+<Theory>
+### Проблема передачи по значению
+
+В Go всё передаётся по значению — функция получает **копию**:
+
+```go
+func double(x int) {
+    x = x * 2  // изменяем КОПИЮ
+}
+
+n := 5
+double(n)
+fmt.Println(n)  // 5 — не изменилось!
+```
+
+### Решение: передача указателя
+
+Если передать указатель, функция получит адрес оригинала:
+
+```go
+func double(p *int) {
+    *p = *p * 2  // изменяем ОРИГИНАЛ через указатель
+}
+
+n := 5
+double(&n)
+fmt.Println(n)  // 10 — изменилось!
+```
+
+### Когда использовать указатели?
+
+**1. Нужно изменить аргумент:**
+```go
+func reset(p *int) {
+    *p = 0
+}
+```
+
+**2. Структура большая — не хотим копировать:**
+```go
+type BigStruct struct {
+    data [1000000]int
+}
+
+func process(bs *BigStruct) {  // передаём 8 байт (адрес)
+    // вместо миллиона int
+}
+```
+
+**3. Может не быть значения (nil):**
+```go
+func find(id int) *User {
+    if found {
+        return &user
+    }
+    return nil  // не найдено
+}
+```
+
+### Возврат указателя из функции
+
+В Go **безопасно** возвращать указатель на локальную переменную:
+
+```go
+func newInt(x int) *int {
+    v := x
+    return &v  // v не умрёт после выхода из функции!
+}
+
+p := newInt(42)
+fmt.Println(*p)  // 42
+```
+
+В C/C++ это было бы ошибкой (dangling pointer). Go использует **escape analysis** — если переменная "убегает" из функции через указатель, она размещается в куче, а не в стеке.
+
+### Escape Analysis
+
+Go-компилятор анализирует, куда размещать переменные:
+
+- **Стек** — быстро, автоматически освобождается
+- **Куча** — медленнее, требует сборки мусора
+
+```go
+func stackVar() int {
+    x := 42
+    return x  // x на стеке, копируется
+}
+
+func heapVar() *int {
+    x := 42
+    return &x  // x "убегает", размещается в куче
+}
+```
+
+Посмотреть решения компилятора:
+```bash
+go build -gcflags="-m" main.go
+```
+
+### Указатели vs Значения: что выбрать?
+
+| Используйте указатель | Используйте значение |
+|----------------------|---------------------|
+| Нужно изменить данные | Данные read-only |
+| Большая структура | Маленькая структура (< 64 байт) |
+| nil имеет смысл | Всегда должно быть значение |
+| Структура изменяется методами | Структура иммутабельна |
+</Theory>
+
+<Syntax>
+### Параметр-указатель в функции
+
+```go
+func functionName(p *Type) {
+    *p = newValue  // изменение значения по указателю
+}
+
+// Вызов
+variable := value
+functionName(&variable)
+```
+
+### Возврат указателя из функции
+
+```go
+func functionName() *Type {
+    value := someValue
+    return &value  // безопасно в Go!
+}
+
+// Вызов
+p := functionName()
+```
+
+### Указатель и значение одновременно
+
+```go
+func process(val int, result *int) {
+    *result = val * 2
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Проблема передачи по значению
+
+```go
+package main
+
+import "fmt"
+
+// Функция получает КОПИЮ значения
+func tryToChange(x int) {
+    x = x * 2
+    fmt.Println("Внутри функции x =", x)  // 20
+}
+
+func main() {
+    num := 10
+    fmt.Println("До вызова:", num)   // 10
+    
+    tryToChange(num)
+    
+    fmt.Println("После вызова:", num)  // 10 (не изменилось!)
+}
+```
+
+### Решение с указателем
+
+```go
+package main
+
+import "fmt"
+
+// Функция получает УКАЗАТЕЛЬ на значение
+func changeValue(x *int) {
+    *x = (*x) * 2
+    fmt.Println("Внутри функции *x =", *x)  // 20
+}
+
+func main() {
+    num := 10
+    fmt.Println("До вызова:", num)   // 10
+    
+    changeValue(&num)  // передаём адрес
+    
+    fmt.Println("После вызова:", num)  // 20 (изменилось!)
+}
+```
+
+### Обмен значений (классический пример)
+
+```go
+package main
+
+import "fmt"
+
+// Без указателей — НЕ РАБОТАЕТ
+func swapWrong(a, b int) {
+    a, b = b, a  // меняем только локальные копии
+}
+
+// С указателями — РАБОТАЕТ
+func swap(a, b *int) {
+    *a, *b = *b, *a
+}
+
+func main() {
+    x, y := 5, 10
+    
+    fmt.Println("До swap:", x, y)  // 5 10
+    
+    swapWrong(x, y)
+    fmt.Println("После swapWrong:", x, y)  // 5 10 (не изменилось)
+    
+    swap(&x, &y)
+    fmt.Println("После swap:", x, y)  // 10 5 (изменилось!)
+}
+```
+
+### Возврат указателя из функции
+
+```go
+package main
+
+import "fmt"
+
+// Создаёт число и возвращает указатель
+func createInt(value int) *int {
+    result := value
+    return &result  // В Go это безопасно!
+}
+
+// Фабрика с использованием new
+func newInt(value int) *int {
+    p := new(int)
+    *p = value
+    return p
+}
+
+func main() {
+    p1 := createInt(42)
+    p2 := createInt(100)
+    p3 := newInt(999)
+    
+    fmt.Println("p1 =", *p1)  // 42
+    fmt.Println("p2 =", *p2)  // 100
+    fmt.Println("p3 =", *p3)  // 999
+    
+    // Каждый указатель — на отдельный объект
+    fmt.Println("p1 == p2:", p1 == p2)  // false
+}
+```
+
+### Модификация нескольких значений
+
+```go
+package main
+
+import "fmt"
+
+// Функция возвращает минимум и максимум через указатели
+func minMax(nums []int, min, max *int) {
+    if len(nums) == 0 {
+        return
+    }
+    
+    *min = nums[0]
+    *max = nums[0]
+    
+    for _, n := range nums {
+        if n < *min {
+            *min = n
+        }
+        if n > *max {
+            *max = n
+        }
+    }
+}
+
+func main() {
+    numbers := []int{3, 7, 1, 9, 4, 6}
+    
+    var minimum, maximum int
+    minMax(numbers, &minimum, &maximum)
+    
+    fmt.Println("Минимум:", minimum)  // 1
+    fmt.Println("Максимум:", maximum) // 9
+}
+```
+
+### Инкремент и декремент
+
+```go
+package main
+
+import "fmt"
+
+func increment(p *int) {
+    *p++
+}
+
+func decrement(p *int) {
+    *p--
+}
+
+func add(p *int, value int) {
+    *p += value
+}
+
+func main() {
+    counter := 10
+    
+    increment(&counter)
+    fmt.Println("После increment:", counter)  // 11
+    
+    decrement(&counter)
+    fmt.Println("После decrement:", counter)  // 10
+    
+    add(&counter, 5)
+    fmt.Println("После add(5):", counter)     // 15
+}
+```
+
+### Опциональные параметры через указатели
+
+```go
+package main
+
+import "fmt"
+
+// Если result не nil, записываем туда результат
+func divide(a, b int, result *float64) bool {
+    if b == 0 {
+        return false
+    }
+    
+    if result != nil {
+        *result = float64(a) / float64(b)
+    }
+    return true
+}
+
+func main() {
+    var res float64
+    
+    // Получаем результат
+    if divide(10, 3, &res) {
+        fmt.Printf("10 / 3 = %.2f\n", res)  // 3.33
+    }
+    
+    // Только проверяем возможность деления
+    if divide(10, 0, nil) {
+        fmt.Println("Деление возможно")
+    } else {
+        fmt.Println("Деление на ноль!")
+    }
+}
+```
+
+### Работа с массивами через указатели
+
+```go
+package main
+
+import "fmt"
+
+// Обнуляет все элементы массива
+func zeroArray(arr *[5]int) {
+    for i := range arr {
+        arr[i] = 0
+    }
+}
+
+// Заполняет массив последовательными числами
+func fillSequence(arr *[5]int, start int) {
+    for i := range arr {
+        arr[i] = start + i
+    }
+}
+
+func main() {
+    numbers := [5]int{10, 20, 30, 40, 50}
+    fmt.Println("До:", numbers)  // [10 20 30 40 50]
+    
+    zeroArray(&numbers)
+    fmt.Println("После zeroArray:", numbers)  // [0 0 0 0 0]
+    
+    fillSequence(&numbers, 1)
+    fmt.Println("После fillSequence:", numbers)  // [1 2 3 4 5]
+}
+```
+
+### Цепочка преобразований
+
+```go
+package main
+
+import "fmt"
+
+func double(p *int) *int {
+    *p *= 2
+    return p  // возвращаем тот же указатель
+}
+
+func addTen(p *int) *int {
+    *p += 10
+    return p
+}
+
+func square(p *int) *int {
+    *p = (*p) * (*p)
+    return p
+}
+
+func main() {
+    x := 5
+    
+    // Цепочка вызовов
+    square(addTen(double(&x)))
+    
+    fmt.Println("Результат:", x)  // ((5*2)+10)^2 = 400
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Забыли передать адрес
+
+```go
+// ❌ НЕПРАВИЛЬНО
+func increment(p *int) { *p++ }
+
+x := 10
+increment(x)  // cannot use x (type int) as type *int
+
+// ✅ ПРАВИЛЬНО
+increment(&x)
+```
+
+### 2. Забыли разыменовать при присваивании
+
+```go
+// ❌ НЕПРАВИЛЬНО
+func setToTen(p *int) {
+    p = 10  // cannot use 10 (type int) as type *int
+}
+
+// ✅ ПРАВИЛЬНО
+func setToTen(p *int) {
+    *p = 10  // разыменовываем!
+}
+```
+
+### 3. Возврат указателя на локальную переменную (в других языках)
+
+```go
+// В C/C++ это ошибка, но в Go — безопасно!
+// Go автоматически перемещает данные в кучу (escape analysis)
+func createValue() *int {
+    x := 42
+    return &x  // ✅ Это БЕЗОПАСНО в Go
+}
+```
+
+### 4. Не проверяем nil перед использованием
+
+```go
+// ❌ НЕПРАВИЛЬНО — может быть panic
+func process(p *int) {
+    *p = *p * 2  // если p == nil, будет panic
+}
+
+// ✅ ПРАВИЛЬНО — проверяем nil
+func process(p *int) {
+    if p == nil {
+        return  // или обработка ошибки
+    }
+    *p = *p * 2
+}
+```
+
+### 5. Путаница с областью видимости указателей
+
+```go
+// ❌ НЕПРАВИЛЬНО — все указывают на одну переменную
+func wrong() []*int {
+    result := make([]*int, 3)
+    for i := 0; i < 3; i++ {
+        result[i] = &i  // все указывают на i!
+    }
+    return result  // все элементы = 3
+}
+
+// ✅ ПРАВИЛЬНО — создаём локальную копию
+func correct() []*int {
+    result := make([]*int, 3)
+    for i := 0; i < 3; i++ {
+        val := i  // локальная копия
+        result[i] = &val
+    }
+    return result  // [0, 1, 2]
+}
+```
+
+### 6. Модификация через nil указатель в срезе
+
+```go
+// ❌ НЕПРАВИЛЬНО
+func processPointers(ptrs []*int) {
+    for _, p := range ptrs {
+        *p *= 2  // panic если p == nil
+    }
+}
+
+// ✅ ПРАВИЛЬНО
+func processPointers(ptrs []*int) {
+    for _, p := range ptrs {
+        if p != nil {
+            *p *= 2
+        }
+    }
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Передача по значению vs указателю</Title>
+<Prompt>
+Покажите разницу между передачей по значению и по указателю в функцию.
+</Prompt>
+<Hints>
+- По значению копируется значение
+- По указателю передаётся адрес оригинала
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func byValue(x int) { x = 100 }
+func byPointer(p *int) { *p = 100 }
+
+func main() {
+    // Продемонстрируйте разницу
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Передача по значению:
+До: 10, После: 10 (не изменилось)
+
+Передача по указателю:
+До: 10, После: 100 (изменилось)
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Функция swap через указатели</Title>
+<Prompt>
+Создайте функцию `swap(a, b *int)`, которая меняет местами значения двух переменных.
+</Prompt>
+<Hints>
+- Используйте временную переменную или множественное присваивание
+- `*a, *b = *b, *a`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию swap
+
+func main() {
+    x, y := 5, 10
+    fmt.Printf("До swap: x=%d, y=%d\n", x, y)
+    // Вызовите swap
+    fmt.Printf("После swap: x=%d, y=%d\n", x, y)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До swap: x=5, y=10
+После swap: x=10, y=5
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Возврат указателя из функции</Title>
+<Prompt>
+Создайте функцию `createInt(value int)`, которая создаёт int и возвращает указатель на него.
+</Prompt>
+<Hints>
+- В Go можно возвращать адрес локальной переменной
+- Компилятор "эскейпит" переменную в кучу
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию createInt
+
+func main() {
+    fmt.Println("Создание через функцию:")
+    // Создайте два указателя
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Создание через функцию:
+p1 = 42
+p2 = 100
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Изменение среза через указатель</Title>
+<Prompt>
+Покажите, что срезы уже передаются по ссылке, но для изменения длины нужен указатель.
+</Prompt>
+<Hints>
+- Срез — это заголовок (ptr, len, cap), он копируется
+- Для append нужен указатель или возврат нового среза
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func modifyElement(s []int) { s[0] = 100 }
+func appendElement(s *[]int) { *s = append(*s, 4) }
+
+func main() {
+    // Продемонстрируйте оба случая
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Изменение элемента (без указателя):
+До: [1 2 3], После: [100 2 3]
+
+Добавление элемента (нужен указатель):
+До: [1 2 3], После: [1 2 3 4]
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Метод с указателем-получателем</Title>
+<Prompt>
+Создайте структуру Counter с методами Inc() и Value(). Метод Inc должен изменять структуру.
+</Prompt>
+<Hints>
+- `func (c *Counter) Inc() { c.value++ }`
+- Указатель-получатель изменяет оригинал
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Counter struct {
+    value int
+}
+
+// Создайте методы Inc и Value
+
+func main() {
+    fmt.Println("Счётчик:")
+    // Продемонстрируйте работу счётчика
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Счётчик:
+Начальное значение: 0
+После Inc(): 1
+После Inc(): 2
+После Inc(): 3
+</ExpectedOutput>
+</Task>

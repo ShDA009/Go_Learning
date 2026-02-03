@@ -1,0 +1,645 @@
+# Каналы (Channels)
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Канал** — типизированный канал связи между горутинами
+2. **Отправка `<-`** — `ch <- value` отправляет значение в канал
+3. **Получение `<-`** — `value := <-ch` получает значение из канала
+4. **Небуферизированный канал** — требует одновременно отправителя и получателя
+5. **Буферизированный канал** — может хранить N элементов без блокировки
+6. **Блокировка** — операции с каналом блокируют горутину до завершения
+</Overview>
+
+<Theory>
+### Что такое канал?
+
+**Канал** — это труба для передачи данных между горутинами. Один конец отправляет, другой принимает.
+
+```go
+ch := make(chan int)
+
+go func() {
+    ch <- 42  // отправить в канал
+}()
+
+value := <-ch  // получить из канала
+```
+
+### Почему каналы, а не общая память?
+
+Go следует философии:
+
+> "Не общайтесь через разделяемую память; делите память через общение"
+
+**Разделяемая память** (как в Java/C++) — сложно, легко ошибиться, нужны мьютексы.
+
+**Каналы** — данные передаются, не разделяются. Нет гонок данных "из коробки".
+
+### Небуферизированные каналы
+
+По умолчанию каналы **небуферизированные** — отправка блокируется до получения:
+
+```go
+ch := make(chan int)  // небуферизированный
+
+go func() {
+    ch <- 1  // блокируется пока кто-то не прочитает
+}()
+
+<-ch  // получаем, разблокируем отправителя
+```
+
+Это **синхронизация** — отправитель и получатель встречаются.
+
+### Буферизированные каналы
+
+Канал с буфером может хранить N значений без блокировки:
+
+```go
+ch := make(chan int, 3)  // буфер на 3 элемента
+
+ch <- 1  // OK, не блокируется
+ch <- 2  // OK
+ch <- 3  // OK
+ch <- 4  // БЛОКИРУЕТСЯ — буфер полон!
+```
+
+Используйте буферизированные каналы когда:
+- Производитель быстрее потребителя
+- Нужна очередь задач
+
+### Направление данных
+
+```go
+ch <- value   // отправка (запись)
+value := <-ch // получение (чтение)
+```
+
+Стрелка `<-` показывает направление движения данных **относительно канала**.
+
+### Deadlock — взаимная блокировка
+
+Если никто не читает из канала, а вы пытаетесь писать (и наоборот) — программа зависнет:
+
+```go
+func main() {
+    ch := make(chan int)
+    ch <- 1  // DEADLOCK! Некому читать
+}
+```
+
+Go обнаруживает deadlock и падает: `fatal error: all goroutines are asleep - deadlock!`
+
+### Проверка статуса канала
+
+```go
+value, ok := <-ch
+if !ok {
+    // канал закрыт и пуст
+}
+```
+
+`ok == false` когда канал закрыт и все значения уже прочитаны.
+
+### Закрытие канала
+
+```go
+close(ch)  // закрыть канал
+```
+
+- Закрытый канал можно читать (получите оставшиеся значения, потом нулевые)
+- Писать в закрытый канал = **panic**
+- Закрывать должен **отправитель**, не получатель
+</Theory>
+
+<Syntax>
+### Создание каналов
+
+```go
+// Небуферизированный канал
+ch := make(chan Type)
+
+// Буферизированный канал с ёмкостью N
+ch := make(chan Type, N)
+```
+
+### Операции с каналами
+
+```go
+ch <- value     // отправить значение в канал
+value := <-ch   // получить значение из канала
+value, ok := <-ch  // получить + проверить, открыт ли канал
+
+len(ch)  // количество элементов в канале
+cap(ch)  // ёмкость канала (для буферизированных)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Небуферизированный канал
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan string)  // небуферизированный
+    
+    // Горутина-отправитель
+    go func() {
+        ch <- "Hello from goroutine!"
+    }()
+    
+    // Получатель в main (блокируется до получения)
+    message := <-ch
+    fmt.Println(message)
+}
+```
+
+### Буферизированный канал
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan int, 3)  // буфер на 3 элемента
+    
+    // Можем отправить до 3 значений без блокировки
+    ch <- 1
+    ch <- 2
+    ch <- 3
+    // ch <- 4  // ⚠️ заблокируется — буфер полон
+    
+    fmt.Println(<-ch)  // 1
+    fmt.Println(<-ch)  // 2
+    fmt.Println(<-ch)  // 3
+    
+    fmt.Println("Capacity:", cap(ch))  // 3
+    fmt.Println("Length:", len(ch))    // 0
+}
+```
+
+### Двусторонний обмен через канал
+
+```go
+package main
+
+import "fmt"
+
+func doubler(ch chan int) {
+    num := <-ch       // получаем число
+    ch <- num * 2     // отправляем обратно удвоенное
+}
+
+func main() {
+    ch := make(chan int)
+    
+    go doubler(ch)
+    
+    ch <- 21           // отправляем
+    result := <-ch     // получаем результат
+    
+    fmt.Println("Result:", result)  // 42
+}
+```
+
+### Передача канала в функцию
+
+```go
+package main
+
+import "fmt"
+
+func square(n int, ch chan int) {
+    ch <- n * n
+}
+
+func main() {
+    ch := make(chan int)
+    
+    go square(5, ch)
+    go square(7, ch)
+    go square(9, ch)
+    
+    // Получаем 3 результата (порядок не гарантирован)
+    fmt.Println(<-ch)
+    fmt.Println(<-ch)
+    fmt.Println(<-ch)
+}
+```
+
+### Функция, возвращающая канал
+
+```go
+package main
+
+import "fmt"
+
+func generator(nums ...int) <-chan int {
+    ch := make(chan int)
+    
+    go func() {
+        for _, n := range nums {
+            ch <- n
+        }
+        close(ch)
+    }()
+    
+    return ch
+}
+
+func main() {
+    ch := generator(1, 2, 3, 4, 5)
+    
+    for num := range ch {
+        fmt.Println(num)
+    }
+}
+```
+
+### Каналы разных типов
+
+```go
+package main
+
+import "fmt"
+
+type Message struct {
+    From    string
+    Content string
+}
+
+func main() {
+    // Канал структур
+    msgCh := make(chan Message, 2)
+    
+    msgCh <- Message{From: "Alice", Content: "Hello!"}
+    msgCh <- Message{From: "Bob", Content: "Hi there!"}
+    
+    msg1 := <-msgCh
+    msg2 := <-msgCh
+    
+    fmt.Printf("%s: %s\n", msg1.From, msg1.Content)
+    fmt.Printf("%s: %s\n", msg2.From, msg2.Content)
+    
+    // Канал функций
+    funcCh := make(chan func(int) int, 1)
+    funcCh <- func(x int) int { return x * x }
+    
+    square := <-funcCh
+    fmt.Println("Square of 5:", square(5))
+}
+```
+
+### Проверка блокировки (deadlock)
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan int)
+    
+    // ❌ DEADLOCK — main блокируется, никто не отправит
+    // fmt.Println(<-ch)
+    
+    // ❌ DEADLOCK — main блокируется, никто не получит
+    // ch <- 42
+    
+    // ✅ Отправка и получение в разных горутинах
+    go func() {
+        ch <- 42
+    }()
+    fmt.Println(<-ch)  // OK
+}
+```
+
+### Практический пример: Producer-Consumer
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func producer(ch chan<- int, done chan<- bool) {
+    for i := 1; i <= 5; i++ {
+        fmt.Printf("Producing: %d\n", i)
+        ch <- i
+        time.Sleep(100 * time.Millisecond)
+    }
+    done <- true
+}
+
+func consumer(id int, ch <-chan int) {
+    for num := range ch {
+        fmt.Printf("Consumer %d received: %d\n", id, num)
+        time.Sleep(150 * time.Millisecond)
+    }
+}
+
+func main() {
+    ch := make(chan int, 3)
+    done := make(chan bool)
+    
+    go producer(ch, done)
+    go consumer(1, ch)
+    go consumer(2, ch)
+    
+    <-done  // ждём завершения producer
+    close(ch)  // закрываем канал
+    
+    time.Sleep(time.Second)  // даём время consumers
+}
+```
+
+### Пример: Pipeline (конвейер)
+
+```go
+package main
+
+import "fmt"
+
+// Генератор чисел
+func gen(nums ...int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for _, n := range nums {
+            out <- n
+        }
+        close(out)
+    }()
+    return out
+}
+
+// Возводит в квадрат
+func sq(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for n := range in {
+            out <- n * n
+        }
+        close(out)
+    }()
+    return out
+}
+
+// Фильтрует чётные
+func filterEven(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for n := range in {
+            if n%2 == 0 {
+                out <- n
+            }
+        }
+        close(out)
+    }()
+    return out
+}
+
+func main() {
+    // Pipeline: gen -> sq -> filterEven
+    nums := gen(1, 2, 3, 4, 5, 6)
+    squared := sq(nums)
+    evens := filterEven(squared)
+    
+    for n := range evens {
+        fmt.Println(n)  // 4, 16, 36
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Deadlock — отправка и получение в одной горутине
+
+```go
+ch := make(chan int)
+ch <- 42      // ❌ блокируется — никто не читает
+fmt.Println(<-ch)
+
+// ✅ Решение: буфер или отдельная горутина
+ch := make(chan int, 1)
+ch <- 42
+fmt.Println(<-ch)
+```
+
+### 2. Чтение из nil канала
+
+```go
+var ch chan int  // nil канал
+// <-ch  // ❌ блокируется навсегда
+
+ch = make(chan int)  // ✅ инициализируем
+```
+
+### 3. Запись в nil канал
+
+```go
+var ch chan int
+// ch <- 42  // ❌ блокируется навсегда
+
+ch = make(chan int, 1)
+ch <- 42  // ✅ OK
+```
+
+### 4. Переполнение буфера
+
+```go
+ch := make(chan int, 2)
+ch <- 1
+ch <- 2
+// ch <- 3  // ❌ блокируется — буфер полон
+
+// ✅ Сначала прочитайте данные
+fmt.Println(<-ch)
+ch <- 3  // OK
+```
+
+### 5. Утечка горутины
+
+```go
+func leak() <-chan int {
+    ch := make(chan int)
+    go func() {
+        // ⚠️ Если никто не читает, горутина зависнет навсегда
+        ch <- 42
+    }()
+    return ch
+}
+
+// ✅ Используйте буферизированный канал
+func noLeak() <-chan int {
+    ch := make(chan int, 1)
+    go func() {
+        ch <- 42  // не блокируется
+    }()
+    return ch
+}
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: Generics: функция</Title>
+<Prompt>
+Создайте обобщённую функцию min.
+</Prompt>
+<Hints>
+- import "golang.org/x/exp/constraints"
+- Ordered включает числа и строки
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func min[T int | float64](a, b T) T {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+func main() {
+    fmt.Println("min(3, 5) =", min(3, 5))
+    fmt.Println("min(3.14, 2.71) =", min(3.14, 2.71))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+min(3, 5) = 3
+min(3.14, 2.71) = 2.71
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Generics: структура</Title>
+<Prompt>
+Создайте обобщённую структуру Box.
+</Prompt>
+<Hints>
+- any = interface{}
+- Box[int], Box[string]
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Определите и реализуйте интерфейс
+// TODO: Определите структуру
+// TODO: Добавьте методы
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Int box: 42
+String box: Hello
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: Constraint interface</Title>
+<Prompt>
+Создайте свой constraint для чисел.
+</Prompt>
+<Hints>
+- | для объединения типов
+- ~ для underlying types
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Определите и реализуйте интерфейс
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Сумма int: 15
+Сумма float: 10.5
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Generics: карта</Title>
+<Prompt>
+Создайте обобщённую функцию keys для карты.
+</Prompt>
+<Hints>
+- Ключи карты должны быть comparable
+- Два типовых параметра
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Создайте функцию согласно заданию
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ключи: [a b]
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="25">
+<Title>Задание 5: Generics: Stack</Title>
+<Prompt>
+Реализуйте обобщённый стек.
+</Prompt>
+<Hints>
+- items []T внутри структуры
+- Pop возвращает последний элемент
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// TODO: Определите структуру
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Push: 1, 2, 3
+Pop: 3
+Pop: 2
+</ExpectedOutput>
+</Task>

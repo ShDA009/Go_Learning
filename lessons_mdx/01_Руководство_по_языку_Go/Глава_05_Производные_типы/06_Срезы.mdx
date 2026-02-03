@@ -1,0 +1,691 @@
+# Срезы (Slices) в Go
+
+<Meta>
+reading_time: 11
+</Meta>
+
+<Overview>
+1. **Срез** — динамическая последовательность элементов одного типа (в отличие от массива)
+2. **Ссылочный тип** — срез ссылается на базовый массив, не копирует данные
+3. **Три компонента**: указатель на массив, длина (len), ёмкость (cap)
+4. **Динамический размер** — можно добавлять и удалять элементы
+5. **Оператор среза** `[i:j]` — создаёт новый срез из существующей последовательности
+</Overview>
+
+<Theory>
+### Срез vs Массив
+
+| Массив | Срез |
+|--------|------|
+| Фиксированный размер | Динамический размер |
+| Размер — часть типа | Размер не часть типа |
+| `[5]int` | `[]int` |
+| Значение (копируется) | Ссылка (указывает на массив) |
+
+**Правило:** В Go почти всегда используйте срезы, не массивы.
+
+### Внутреннее устройство среза
+
+Срез — это структура из трёх частей:
+
+```
+Срез s = []int{1, 2, 3}
+
+┌───────────┐
+│  pointer  │──────► ┌───┬───┬───┬───┬───┐
+├───────────┤        │ 1 │ 2 │ 3 │   │   │  (базовый массив)
+│   len=3   │        └───┴───┴───┴───┴───┘
+├───────────┤
+│   cap=5   │
+└───────────┘
+```
+
+- **pointer** — указатель на первый элемент в базовом массиве
+- **len** — количество элементов в срезе
+- **cap** — количество элементов от начала среза до конца массива
+
+### Срез — это "окно" в массив
+
+```go
+arr := [5]int{1, 2, 3, 4, 5}
+s := arr[1:4]  // [2, 3, 4]
+
+// s смотрит на ТОТ ЖЕ массив arr
+s[0] = 100
+fmt.Println(arr)  // [1, 100, 3, 4, 5] — изменился!
+```
+
+### nil срез vs пустой срез
+
+```go
+var nilSlice []int     // nil, len=0, cap=0
+emptySlice := []int{}  // не nil, len=0, cap=0
+
+nilSlice == nil   // true
+emptySlice == nil // false
+
+// Но оба работают одинаково:
+len(nilSlice)  // 0
+len(emptySlice) // 0
+append(nilSlice, 1)  // [1]
+```
+
+### make() — создание среза
+
+```go
+s := make([]int, 5)     // len=5, cap=5, все нули
+s := make([]int, 5, 10) // len=5, cap=10
+```
+
+Используйте `make` когда знаете примерный размер — это экономит реаллокации.
+
+### append() — добавление элементов
+
+```go
+s := []int{1, 2, 3}
+s = append(s, 4)        // [1, 2, 3, 4]
+s = append(s, 5, 6, 7)  // [1, 2, 3, 4, 5, 6, 7]
+s = append(s, other...) // добавить другой срез
+```
+
+**Важно:** `append` может создать новый массив, если ёмкость недостаточна!
+
+```go
+s := []int{1, 2, 3}
+s2 := append(s, 4)  // если cap(s) < 4, создастся новый массив
+```
+
+Всегда присваивайте результат: `s = append(s, x)`
+
+### copy() — копирование срезов
+
+```go
+src := []int{1, 2, 3}
+dst := make([]int, len(src))
+copy(dst, src)  // dst = [1, 2, 3], независимая копия
+```
+</Theory>
+
+<Syntax>
+### Объявление и создание
+
+```go
+var s []int                      // nil срез
+s := []int{}                     // пустой срез
+s := []int{1, 2, 3}             // с инициализацией
+s := make([]int, 5)             // длина 5, ёмкость 5
+s := make([]int, 5, 10)         // длина 5, ёмкость 10
+```
+
+### Оператор среза
+
+```go
+arr := [5]int{1, 2, 3, 4, 5}
+s1 := arr[1:4]   // элементы с индекса 1 по 3: [2 3 4]
+s2 := arr[:3]    // с начала по индекс 2: [1 2 3]
+s3 := arr[2:]    // с индекса 2 до конца: [3 4 5]
+s4 := arr[:]     // весь массив: [1 2 3 4 5]
+```
+
+### Основные операции
+
+```go
+len(s)                          // длина
+cap(s)                          // ёмкость
+s = append(s, 6)                // добавление элемента
+s = append(s, 7, 8, 9)          // добавление нескольких
+copy(dst, src)                  // копирование
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Создание срезов разными способами
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // 1. Литерал среза
+    nums := []int{1, 2, 3, 4, 5}
+    fmt.Println("Литерал:", nums)
+    
+    // 2. Через make
+    zeros := make([]int, 5)  // [0 0 0 0 0]
+    fmt.Println("make(5):", zeros)
+    
+    // 3. make с ёмкостью
+    withCap := make([]int, 3, 10)  // длина 3, ёмкость 10
+    fmt.Printf("make(3,10): %v, len=%d, cap=%d\n", withCap, len(withCap), cap(withCap))
+    
+    // 4. Пустой срез
+    empty := []int{}
+    fmt.Printf("Пустой: %v, len=%d, cap=%d\n", empty, len(empty), cap(empty))
+    
+    // 5. nil срез
+    var nilSlice []int
+    fmt.Printf("nil: %v, nil=%v\n", nilSlice, nilSlice == nil)
+}
+```
+
+### Срез из массива
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    array := [8]string{"a", "b", "c", "d", "e", "f", "g", "h"}
+    
+    // Разные варианты среза
+    s1 := array[2:5]   // [c d e]
+    s2 := array[:4]    // [a b c d]
+    s3 := array[4:]    // [e f g h]
+    s4 := array[:]     // весь массив
+    
+    fmt.Println("array[2:5]:", s1)
+    fmt.Println("array[:4]:", s2)
+    fmt.Println("array[4:]:", s3)
+    fmt.Println("array[:]:", s4)
+    
+    // Длина и ёмкость
+    fmt.Printf("s1: len=%d, cap=%d\n", len(s1), cap(s1))  // len=3, cap=6
+}
+```
+
+### Связь среза и базового массива
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    array := [5]int{1, 2, 3, 4, 5}
+    slice := array[1:4]  // [2 3 4]
+    
+    fmt.Println("Массив:", array)
+    fmt.Println("Срез:", slice)
+    
+    // Изменение среза влияет на массив
+    slice[0] = 20
+    fmt.Println("После slice[0]=20:")
+    fmt.Println("Массив:", array)  // [1 20 3 4 5]
+    fmt.Println("Срез:", slice)    // [20 3 4]
+    
+    // Изменение массива влияет на срез
+    array[2] = 30
+    fmt.Println("После array[2]=30:")
+    fmt.Println("Срез:", slice)    // [20 30 4]
+}
+```
+
+### Добавление элементов (append)
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := []int{1, 2, 3}
+    fmt.Printf("До: %v, len=%d, cap=%d\n", s, len(s), cap(s))
+    
+    // Добавление одного элемента
+    s = append(s, 4)
+    fmt.Printf("После append(4): %v, len=%d, cap=%d\n", s, len(s), cap(s))
+    
+    // Добавление нескольких элементов
+    s = append(s, 5, 6, 7)
+    fmt.Printf("После append(5,6,7): %v, len=%d, cap=%d\n", s, len(s), cap(s))
+    
+    // Добавление другого среза
+    other := []int{8, 9, 10}
+    s = append(s, other...)  // ... распаковывает срез
+    fmt.Printf("После append(other...): %v\n", s)
+}
+```
+
+### Удаление элементов
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := []string{"a", "b", "c", "d", "e"}
+    fmt.Println("Исходный:", s)
+    
+    // Удаление элемента по индексу 2 ("c")
+    i := 2
+    s = append(s[:i], s[i+1:]...)
+    fmt.Println("После удаления [2]:", s)  // [a b d e]
+    
+    // Удаление первого элемента
+    s = s[1:]
+    fmt.Println("После удаления первого:", s)  // [b d e]
+    
+    // Удаление последнего элемента
+    s = s[:len(s)-1]
+    fmt.Println("После удаления последнего:", s)  // [b d]
+}
+```
+
+### Копирование срезов
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    src := []int{1, 2, 3, 4, 5}
+    
+    // Способ 1: copy
+    dst1 := make([]int, len(src))
+    copied := copy(dst1, src)
+    fmt.Printf("copy: %v, скопировано %d элементов\n", dst1, copied)
+    
+    // Способ 2: append к nil срезу
+    var dst2 []int
+    dst2 = append(dst2, src...)
+    fmt.Println("append:", dst2)
+    
+    // Проверка независимости
+    dst1[0] = 100
+    fmt.Println("src после изменения dst1:", src)  // [1 2 3 4 5] — не изменился
+}
+```
+
+### Двумерные срезы
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    // Создание двумерного среза
+    matrix := [][]int{
+        {1, 2, 3},
+        {4, 5, 6},
+        {7, 8, 9},
+    }
+    
+    // Обход
+    for i, row := range matrix {
+        for j, val := range row {
+            fmt.Printf("matrix[%d][%d] = %d\n", i, j, val)
+        }
+    }
+    
+    // Создание через make
+    rows, cols := 3, 4
+    grid := make([][]int, rows)
+    for i := range grid {
+        grid[i] = make([]int, cols)
+    }
+    
+    grid[1][2] = 42
+    fmt.Println("grid:", grid)
+}
+```
+
+### Сортировка срезов
+
+```go
+package main
+
+import (
+    "fmt"
+    "sort"
+)
+
+func main() {
+    // Сортировка чисел
+    nums := []int{5, 2, 8, 1, 9, 3}
+    sort.Ints(nums)
+    fmt.Println("Отсортированные числа:", nums)
+    
+    // Сортировка строк
+    names := []string{"Tom", "Alice", "Bob", "Kate"}
+    sort.Strings(names)
+    fmt.Println("Отсортированные строки:", names)
+    
+    // Обратная сортировка
+    sort.Sort(sort.Reverse(sort.IntSlice(nums)))
+    fmt.Println("По убыванию:", nums)
+    
+    // Поиск в отсортированном срезе
+    nums = []int{1, 2, 3, 5, 8, 9}
+    idx := sort.SearchInts(nums, 5)
+    fmt.Println("Индекс 5:", idx)  // 3
+}
+```
+
+### Фильтрация и преобразование
+
+```go
+package main
+
+import "fmt"
+
+func filter(nums []int, predicate func(int) bool) []int {
+    result := []int{}
+    for _, n := range nums {
+        if predicate(n) {
+            result = append(result, n)
+        }
+    }
+    return result
+}
+
+func mapInts(nums []int, transform func(int) int) []int {
+    result := make([]int, len(nums))
+    for i, n := range nums {
+        result[i] = transform(n)
+    }
+    return result
+}
+
+func main() {
+    nums := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    
+    // Фильтрация чётных
+    evens := filter(nums, func(n int) bool { return n%2 == 0 })
+    fmt.Println("Чётные:", evens)  // [2 4 6 8 10]
+    
+    // Удвоение
+    doubled := mapInts(nums, func(n int) int { return n * 2 })
+    fmt.Println("Удвоенные:", doubled)
+    
+    // Комбинация: чётные, затем удвоенные
+    result := mapInts(filter(nums, func(n int) bool { return n%2 == 0 }), 
+                      func(n int) int { return n * 2 })
+    fmt.Println("Чётные удвоенные:", result)  // [4 8 12 16 20]
+}
+```
+
+### Сравнение срезов
+
+```go
+package main
+
+import (
+    "fmt"
+    "reflect"
+)
+
+func main() {
+    s1 := []int{1, 2, 3}
+    s2 := []int{1, 2, 3}
+    s3 := []int{1, 2, 4}
+    
+    // Нельзя сравнивать срезы напрямую: s1 == s2 — ошибка компиляции
+    
+    // Используем reflect.DeepEqual
+    fmt.Println("s1 == s2:", reflect.DeepEqual(s1, s2))  // true
+    fmt.Println("s1 == s3:", reflect.DeepEqual(s1, s3))  // false
+    
+    // Или пишем свою функцию
+    equal := func(a, b []int) bool {
+        if len(a) != len(b) {
+            return false
+        }
+        for i := range a {
+            if a[i] != b[i] {
+                return false
+            }
+        }
+        return true
+    }
+    
+    fmt.Println("equal(s1, s2):", equal(s1, s2))  // true
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Изменение среза влияет на базовый массив
+
+```go
+arr := [5]int{1, 2, 3, 4, 5}
+slice := arr[1:4]
+
+// ❌ НЕОЖИДАННО — изменение slice меняет arr
+slice[0] = 100
+fmt.Println(arr)  // [1 100 3 4 5]
+
+// ✅ ПРАВИЛЬНО — создаём независимую копию
+slice := make([]int, 3)
+copy(slice, arr[1:4])
+slice[0] = 100  // arr не изменится
+```
+
+### 2. append может создать новый массив
+
+```go
+// ❌ НЕОЖИДАННО
+s1 := []int{1, 2, 3}
+s2 := s1
+s2 = append(s2, 4)  // может создать новый массив!
+
+s1[0] = 100
+fmt.Println(s2[0])  // может быть 1 или 100 — непредсказуемо
+
+// ✅ ПРАВИЛЬНО — не полагайтесь на связь после append
+```
+
+### 3. Доступ по индексу за пределами длины (но в пределах ёмкости)
+
+```go
+s := make([]int, 3, 10)  // len=3, cap=10
+
+// ❌ НЕПРАВИЛЬНО — panic: index out of range
+// fmt.Println(s[5])  // индекс 5 >= len(3)
+
+// ✅ ПРАВИЛЬНО — расширяем срез
+s = s[:6]  // теперь len=6
+fmt.Println(s[5])  // OK
+```
+
+### 4. Забыли присвоить результат append
+
+```go
+s := []int{1, 2, 3}
+
+// ❌ НЕПРАВИЛЬНО — результат теряется
+append(s, 4)
+fmt.Println(s)  // [1 2 3] — 4 не добавлен!
+
+// ✅ ПРАВИЛЬНО
+s = append(s, 4)
+fmt.Println(s)  // [1 2 3 4]
+```
+
+### 5. Неправильное удаление при итерации
+
+```go
+s := []int{1, 2, 3, 4, 5}
+
+// ❌ НЕПРАВИЛЬНО — пропускаем элементы
+for i := 0; i < len(s); i++ {
+    if s[i]%2 == 0 {
+        s = append(s[:i], s[i+1:]...)
+        // После удаления s[i] указывает на следующий элемент!
+    }
+}
+
+// ✅ ПРАВИЛЬНО — итерация с конца
+for i := len(s) - 1; i >= 0; i-- {
+    if s[i]%2 == 0 {
+        s = append(s[:i], s[i+1:]...)
+    }
+}
+```
+
+### 6. Пустой срез vs nil срез
+
+```go
+var nilSlice []int       // nil
+emptySlice := []int{}    // не nil, но пустой
+
+fmt.Println(nilSlice == nil)   // true
+fmt.Println(emptySlice == nil) // false
+
+// JSON разница:
+// nilSlice → null
+// emptySlice → []
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Создание среза</Title>
+<Prompt>
+Создайте срез и выведите его.
+</Prompt>
+<Hints>
+- `s := []int{1,2,3,4,5}`
+- В отличие от массива, размер не указывается
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := []int{1, 2, 3, 4, 5}
+    fmt.Println("Срез:", s)
+    fmt.Printf("Длина: %d, Ёмкость: %d\n", len(s), cap(s))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Срез: [1 2 3 4 5]
+Длина: 5, Ёмкость: 5
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: append</Title>
+<Prompt>
+Добавьте элементы в срез через append.
+</Prompt>
+<Hints>
+- `s = append(s, 3, 4, 5)`
+- append возвращает новый срез
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := []int{1, 2}
+    fmt.Println("До:", s)
+    // Добавьте элементы
+}
+```
+</StarterCode>
+<ExpectedOutput>
+До: [1 2]
+После: [1 2 3 4 5]
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Срез среза (slicing)</Title>
+<Prompt>
+Создайте подсрез от существующего среза.
+</Prompt>
+<Hints>
+- `s[1:4]` — элементы 1, 2, 3
+- Индексация с 0
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := []int{1, 2, 3, 4, 5}
+    fmt.Println("Оригинал:", s)
+    // Покажите подсрезы
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Оригинал: [1 2 3 4 5]
+Подсрез [1:4]: [2 3 4]
+Подсрез [:3]: [1 2 3]
+Подсрез [2:]: [3 4 5]
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: make для срезов</Title>
+<Prompt>
+Создайте срез через make с заданной длиной и ёмкостью.
+</Prompt>
+<Hints>
+- `make([]int, 3, 10)`
+- Ёмкость позволяет расти без перевыделения
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    s := make([]int, 3, 10)
+    fmt.Println("Срез:", s)
+    fmt.Printf("Длина: %d, Ёмкость: %d\n", len(s), cap(s))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Срез: [0 0 0]
+Длина: 3, Ёмкость: 10
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: copy</Title>
+<Prompt>
+Скопируйте срез через copy и покажите независимость.
+</Prompt>
+<Hints>
+- `copy(dst, src)`
+- dst должен быть создан заранее
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    orig := []int{1, 2, 3}
+    cpy := make([]int, len(orig))
+    copy(cpy, orig)
+    // Покажите независимость
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Оригинал: [1 2 3]
+Копия: [1 2 3]
+После изменения:
+Оригинал: [100 2 3]
+Копия: [1 2 3]
+</ExpectedOutput>
+</Task>

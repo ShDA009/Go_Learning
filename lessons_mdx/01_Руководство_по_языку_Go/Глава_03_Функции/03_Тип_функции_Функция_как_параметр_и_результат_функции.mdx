@@ -1,0 +1,632 @@
+# Тип функции. Функция как параметр и результат
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+- Каждая функция имеет **тип**, определяемый параметрами и возвратом
+- Функции — это **значения первого класса** (first-class citizens)
+- Переменная может **хранить функцию** соответствующего типа
+- Функция может **принимать другую функцию** как параметр
+- Функция может **возвращать функцию** как результат
+- Это основа для **функционального программирования** в Go
+
+### Примеры типов функций
+
+| Функция | Тип |
+|---------|-----|
+| `func add(a, b int) int` | `func(int, int) int` |
+| `func print(s string)` | `func(string)` |
+| `func now() time.Time` | `func() time.Time` |
+| `func convert(f func(int) int, x int) int` | `func(func(int) int, int) int` |
+</Overview>
+
+<Theory>
+### Функции — значения первого класса
+
+В Go функции — это **полноценные значения**, как числа или строки. Это значит, функции можно:
+- Присваивать переменным
+- Передавать в другие функции
+- Возвращать из функций
+- Хранить в структурах данных
+
+### Тип функции
+
+Каждая функция имеет тип, определяемый её сигнатурой:
+
+```go
+func add(a, b int) int { return a + b }
+// Тип: func(int, int) int
+
+func greet(name string) { fmt.Println("Hello", name) }
+// Тип: func(string)
+```
+
+Переменная может хранить любую функцию с таким же типом:
+
+```go
+var operation func(int, int) int
+
+operation = add         // OK
+operation = subtract    // OK, если subtract имеет тип func(int, int) int
+operation = greet       // ОШИБКА! Тип не совпадает
+```
+
+### Функции высшего порядка
+
+**Функция высшего порядка** — это функция, которая:
+- Принимает другую функцию как параметр, или
+- Возвращает функцию как результат
+
+### Функция как параметр
+
+Позволяет передать "поведение" в функцию:
+
+```go
+func apply(nums []int, fn func(int) int) []int {
+    result := make([]int, len(nums))
+    for i, n := range nums {
+        result[i] = fn(n)  // применяем переданную функцию
+    }
+    return result
+}
+
+// Использование
+double := func(x int) int { return x * 2 }
+squared := func(x int) int { return x * x }
+
+apply([]int{1, 2, 3}, double)   // [2, 4, 6]
+apply([]int{1, 2, 3}, squared)  // [1, 4, 9]
+```
+
+### Функция как результат
+
+Позволяет создавать "фабрики функций":
+
+```go
+func multiplier(factor int) func(int) int {
+    return func(x int) int {
+        return x * factor
+    }
+}
+
+double := multiplier(2)
+triple := multiplier(3)
+
+double(5)  // 10
+triple(5)  // 15
+```
+
+### Практические применения
+
+**1. Callback'и:**
+```go
+func fetchData(url string, callback func([]byte, error)) {
+    data, err := http.Get(url)
+    callback(data, err)
+}
+```
+
+**2. Стратегия сортировки:**
+```go
+sort.Slice(people, func(i, j int) bool {
+    return people[i].Age < people[j].Age
+})
+```
+
+**3. Middleware:**
+```go
+func withLogging(handler func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+    return func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("Request: %s", r.URL)
+        handler(w, r)
+    }
+}
+```
+
+### Почему это мощно?
+
+Функции как значения позволяют:
+- Писать **гибкий код** (поведение определяется в runtime)
+- Избегать **дублирования** (общая логика + разное поведение)
+- Создавать **DSL** (domain-specific languages)
+</Theory>
+
+<Syntax>
+### Объявление переменной-функции
+```go
+var f func(int, int) int
+f = add  // присвоение функции
+```
+
+### Функция как параметр
+```go
+func process(data int, fn func(int) int) int {
+    return fn(data)
+}
+```
+
+### Функция как результат
+```go
+func getOperation(op string) func(int, int) int {
+    // возвращаем функцию
+}
+```
+
+### Псевдоним типа функции
+```go
+type Operation func(int, int) int
+
+func calculate(a, b int, op Operation) int {
+    return op(a, b)
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Функция как значение
+```go
+package main
+
+import "fmt"
+
+func add(a, b int) int { return a + b }
+func sub(a, b int) int { return a - b }
+func mul(a, b int) int { return a * b }
+
+func main() {
+    // Переменная типа функции
+    var operation func(int, int) int
+    
+    operation = add
+    fmt.Println("add(5, 3) =", operation(5, 3))  // 8
+    
+    operation = sub
+    fmt.Println("sub(5, 3) =", operation(5, 3))  // 2
+    
+    operation = mul
+    fmt.Println("mul(5, 3) =", operation(5, 3))  // 15
+}
+```
+
+### Пример 2: Тип-псевдоним для функции
+```go
+package main
+
+import "fmt"
+
+// Определяем тип для математических операций
+type MathOp func(int, int) int
+
+func add(a, b int) int { return a + b }
+func sub(a, b int) int { return a - b }
+
+func main() {
+    // Используем тип MathOp
+    operations := map[string]MathOp{
+        "+": add,
+        "-": sub,
+    }
+    
+    fmt.Println("10 + 5 =", operations["+"](10, 5))
+    fmt.Println("10 - 5 =", operations["-"](10, 5))
+}
+```
+
+### Пример 3: Функция как параметр (callback)
+```go
+package main
+
+import "fmt"
+
+// apply применяет функцию fn к каждому элементу среза
+func apply(numbers []int, fn func(int) int) []int {
+    result := make([]int, len(numbers))
+    for i, n := range numbers {
+        result[i] = fn(n)
+    }
+    return result
+}
+
+func double(x int) int { return x * 2 }
+func square(x int) int { return x * x }
+
+func main() {
+    nums := []int{1, 2, 3, 4, 5}
+    
+    doubled := apply(nums, double)
+    fmt.Println("Удвоенные:", doubled)  // [2 4 6 8 10]
+    
+    squared := apply(nums, square)
+    fmt.Println("Квадраты:", squared)   // [1 4 9 16 25]
+}
+```
+
+### Пример 4: Фильтрация с предикатом
+```go
+package main
+
+import "fmt"
+
+// filter возвращает элементы, для которых predicate возвращает true
+func filter(numbers []int, predicate func(int) bool) []int {
+    result := []int{}
+    for _, n := range numbers {
+        if predicate(n) {
+            result = append(result, n)
+        }
+    }
+    return result
+}
+
+func isEven(n int) bool     { return n%2 == 0 }
+func isPositive(n int) bool { return n > 0 }
+
+func main() {
+    nums := []int{-3, -1, 0, 1, 2, 3, 4, 5}
+    
+    evens := filter(nums, isEven)
+    fmt.Println("Чётные:", evens)  // [0 2 4]
+    
+    positives := filter(nums, isPositive)
+    fmt.Println("Положительные:", positives)  // [1 2 3 4 5]
+}
+```
+
+### Пример 5: Функция как результат (фабрика)
+```go
+package main
+
+import "fmt"
+
+// getMultiplier возвращает функцию умножения на n
+func getMultiplier(n int) func(int) int {
+    return func(x int) int {
+        return x * n
+    }
+}
+
+// getComparator возвращает функцию сравнения с порогом
+func getComparator(threshold int) func(int) bool {
+    return func(x int) bool {
+        return x > threshold
+    }
+}
+
+func main() {
+    // Создаём функции-умножители
+    double := getMultiplier(2)
+    triple := getMultiplier(3)
+    
+    fmt.Println("5 * 2 =", double(5))  // 10
+    fmt.Println("5 * 3 =", triple(5))  // 15
+    
+    // Создаём компараторы
+    greaterThan10 := getComparator(10)
+    greaterThan100 := getComparator(100)
+    
+    fmt.Println("15 > 10:", greaterThan10(15))    // true
+    fmt.Println("15 > 100:", greaterThan100(15))  // false
+}
+```
+
+### Пример 6: Калькулятор с функциями
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+type Operation func(float64, float64) (float64, error)
+
+func add(a, b float64) (float64, error) { return a + b, nil }
+func sub(a, b float64) (float64, error) { return a - b, nil }
+func mul(a, b float64) (float64, error) { return a * b, nil }
+func div(a, b float64) (float64, error) {
+    if b == 0 {
+        return 0, errors.New("деление на ноль")
+    }
+    return a / b, nil
+}
+
+func getOperation(op string) (Operation, error) {
+    operations := map[string]Operation{
+        "+": add,
+        "-": sub,
+        "*": mul,
+        "/": div,
+    }
+    
+    fn, ok := operations[op]
+    if !ok {
+        return nil, errors.New("неизвестная операция")
+    }
+    return fn, nil
+}
+
+func calculate(a float64, op string, b float64) (float64, error) {
+    fn, err := getOperation(op)
+    if err != nil {
+        return 0, err
+    }
+    return fn(a, b)
+}
+
+func main() {
+    ops := []string{"+", "-", "*", "/"}
+    a, b := 10.0, 3.0
+    
+    for _, op := range ops {
+        result, err := calculate(a, op, b)
+        if err != nil {
+            fmt.Printf("%.0f %s %.0f = Ошибка: %v\n", a, op, b, err)
+        } else {
+            fmt.Printf("%.0f %s %.0f = %.2f\n", a, op, b, result)
+        }
+    }
+}
+```
+
+### Пример 7: Middleware pattern
+```go
+package main
+
+import "fmt"
+
+type Handler func(string) string
+
+// withLogging оборачивает обработчик логированием
+func withLogging(h Handler) Handler {
+    return func(input string) string {
+        fmt.Printf("Вход: %q\n", input)
+        result := h(input)
+        fmt.Printf("Выход: %q\n", result)
+        return result
+    }
+}
+
+// withPrefix добавляет префикс к результату
+func withPrefix(prefix string, h Handler) Handler {
+    return func(input string) string {
+        return prefix + h(input)
+    }
+}
+
+func uppercase(s string) string {
+    result := ""
+    for _, c := range s {
+        if c >= 'a' && c <= 'z' {
+            result += string(c - 32)
+        } else {
+            result += string(c)
+        }
+    }
+    return result
+}
+
+func main() {
+    // Базовый обработчик
+    handler := uppercase
+    fmt.Println(handler("hello"))  // HELLO
+    
+    // С логированием
+    logged := withLogging(uppercase)
+    logged("world")
+    
+    // С префиксом
+    prefixed := withPrefix("Result: ", uppercase)
+    fmt.Println(prefixed("test"))  // Result: TEST
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Несоответствие типа функции
+```go
+// ❌ Неправильно — типы не совпадают
+func add(a, b int) int { return a + b }
+var f func(int) int = add  // cannot use add as func(int) int
+
+// ✅ Правильно
+var f func(int, int) int = add
+```
+
+### 2. Вызов nil-функции
+```go
+// ❌ Паника при вызове nil
+var f func(int) int  // f == nil
+f(5)  // panic: invalid memory address
+
+// ✅ Проверяйте на nil
+if f != nil {
+    f(5)
+}
+```
+
+### 3. Путаница ссылки и вызова
+```go
+func greet() { fmt.Println("Hello") }
+
+// ❌ Неправильно — передаём результат, а не функцию
+var f = greet()  // f = nil (greet возвращает ничего)
+
+// ✅ Правильно — передаём функцию
+var f = greet    // f = func()
+f()              // вызываем
+```
+
+### 4. Неправильный тип возврата
+```go
+// ❌ Неправильно
+func factory() func(int) {
+    return func(x int) int { return x * 2 }  // несовпадение типа возврата
+}
+
+// ✅ Правильно
+func factory() func(int) int {
+    return func(x int) int { return x * 2 }
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Функция как переменная</Title>
+<Prompt>
+Присвойте функцию переменной и вызовите её через переменную.
+</Prompt>
+<Hints>
+- Тип функции: `func(int, int) int`
+- Присваивание: `op := add`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func add(a, b int) int {
+    return a + b
+}
+
+func main() {
+    // Присвойте функцию переменной и вызовите
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Вызов через переменную:
+add(5, 3) = 8
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Функция как параметр</Title>
+<Prompt>
+Создайте функцию `apply(f func(int) int, x int)`, которая применяет переданную функцию к числу.
+</Prompt>
+<Hints>
+- Параметр функции: `f func(int) int`
+- Вызов: `f(x)`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func double(x int) int { return x * 2 }
+func square(x int) int { return x * x }
+
+// Создайте функцию apply
+
+func main() {
+    // Вызовите apply с разными функциями
+}
+```
+</StarterCode>
+<ExpectedOutput>
+apply(double, 5) = 10
+apply(square, 5) = 25
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: Функция возвращает функцию</Title>
+<Prompt>
+Создайте функцию `multiplier(factor int)`, которая возвращает функцию умножения на заданный множитель.
+</Prompt>
+<Hints>
+- Возврат: `func(int) int`
+- Возвращаемая функция захватывает factor
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте функцию multiplier
+
+func main() {
+    // Создайте double и triple
+}
+```
+</StarterCode>
+<ExpectedOutput>
+double := multiplier(2)
+triple := multiplier(3)
+double(5) = 10
+triple(5) = 15
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Калькулятор с функциями</Title>
+<Prompt>
+Создайте калькулятор, где операции передаются как функции.
+</Prompt>
+<Hints>
+- Тип операции: `func(int, int) int`
+- calculate вызывает переданную операцию
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func add(a, b int) int { return a + b }
+func sub(a, b int) int { return a - b }
+func mul(a, b int) int { return a * b }
+
+// Создайте функцию calculate
+
+func main() {
+    // Продемонстрируйте калькулятор
+}
+```
+</StarterCode>
+<ExpectedOutput>
+calculate(10, 5, add) = 15
+calculate(10, 5, sub) = 5
+calculate(10, 5, mul) = 50
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: type для функционального типа</Title>
+<Prompt>
+Создайте псевдоним типа `Operation` для `func(int, int) int` и используйте его.
+</Prompt>
+<Hints>
+- `type Operation func(int, int) int`
+- Делает код более читаемым
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Объявите type Operation
+
+func divide(a, b int) int {
+    return a / b
+}
+
+func main() {
+    // Используйте тип Operation
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Тип Operation: func(int, int) int
+Использование Operation:
+divide(20, 4) = 5
+</ExpectedOutput>
+</Task>

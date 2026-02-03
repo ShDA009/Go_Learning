@@ -1,0 +1,584 @@
+# Псевдонимы типов (Type Aliases) в Go
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **Псевдоним типа** — альтернативное имя для существующего типа, созданное с помощью `type`
+2. **Семантическая типизация** — псевдонимы позволяют придать типу смысловое значение (mile, kilometer, рубль)
+3. **Безопасность типов** — несмотря на одинаковый базовый тип, разные псевдонимы несовместимы
+4. **Читаемость кода** — сокращение длинных типов (особенно функциональных) для лучшей читаемости
+5. **Документирование** — название типа само по себе объясняет его назначение
+</Overview>
+
+<Theory>
+### Что такое псевдоним типа?
+
+**Псевдоним типа** — это новое имя для существующего типа. Он создаёт **новый тип**, который не совместим с оригиналом, даже если имеет тот же базовый тип.
+
+```go
+type Celsius float64
+type Fahrenheit float64
+
+var c Celsius = 100
+var f Fahrenheit = 212
+
+c = f  // ОШИБКА! Разные типы, хотя оба float64
+c = Celsius(f)  // OK, явное преобразование
+```
+
+### Зачем создавать новые типы?
+
+**1. Семантическая ясность:**
+```go
+func travel(distance int) {}  // что это? метры? мили?
+
+type Mile int
+type Kilometer int
+func travel(distance Kilometer) {}  // понятно!
+```
+
+**2. Безопасность типов:**
+```go
+type UserID int
+type ProductID int
+
+func getUser(id UserID) User { ... }
+
+var productID ProductID = 42
+getUser(productID)  // ОШИБКА! Нельзя случайно спутать
+```
+
+**3. Упрощение сложных типов:**
+```go
+// Без псевдонима — сложно читать
+var handlers map[string]func(http.ResponseWriter, *http.Request)
+
+// С псевдонимом — понятнее
+type HandlerMap map[string]http.HandlerFunc
+var handlers HandlerMap
+```
+
+### Псевдоним vs Базовый тип
+
+Новый тип и базовый тип — это **разные типы**:
+
+```go
+type Age int
+
+var age Age = 25
+var num int = 25
+
+// Нельзя напрямую
+// age = num  // ОШИБКА!
+
+// Нужно явное преобразование
+age = Age(num)   // OK
+num = int(age)   // OK
+```
+
+### Методы на пользовательских типах
+
+Главное преимущество — можно добавлять методы:
+
+```go
+type Celsius float64
+
+func (c Celsius) ToFahrenheit() Fahrenheit {
+    return Fahrenheit(c*9/5 + 32)
+}
+
+temp := Celsius(100)
+fmt.Println(temp.ToFahrenheit())  // 212
+```
+
+На встроенных типах (int, string) методы добавлять нельзя!
+
+### Псевдоним для функционального типа
+
+Особенно полезно для сложных функциональных типов:
+
+```go
+// Без псевдонима
+func Apply(data []int, fn func(int) int) []int
+
+// С псевдонимом
+type Mapper func(int) int
+func Apply(data []int, fn Mapper) []int
+```
+
+### type alias (=) vs type definition
+
+Go 1.9 добавил **настоящие псевдонимы** с `=`:
+
+```go
+// Type definition — создаёт НОВЫЙ тип
+type MyInt int
+
+// Type alias — просто другое имя для ТОГО ЖЕ типа
+type YourInt = int
+
+var a MyInt = 1
+var b int = 1
+// a = b  // ОШИБКА!
+
+var c YourInt = 1
+var d int = 1
+c = d  // OK! Это один и тот же тип
+```
+
+Алиасы с `=` нужны редко — в основном для постепенного рефакторинга больших кодовых баз.
+</Theory>
+
+<Syntax>
+### Объявление псевдонима
+
+```go
+type НовоеИмя БазовыйТип
+```
+
+### Примеры объявлений
+
+```go
+type mile uint            // псевдоним для uint
+type kilometer uint       // другой псевдоним для uint
+type age int              // возраст как int
+type price float64        // цена как float64
+type name string          // имя как string
+```
+
+### Псевдоним для функционального типа
+
+```go
+type BinaryOp func(int, int) int
+type Handler func(request, response)
+type Predicate func(int) bool
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовое использование псевдонимов
+
+```go
+package main
+
+import "fmt"
+
+type mile uint
+type kilometer uint
+
+func main() {
+    var distance mile = 100
+    
+    // Работает как обычный uint
+    distance += 50
+    fmt.Println("Расстояние:", distance, "миль")  // 150 миль
+    
+    // Можно использовать арифметику
+    distance = distance * 2
+    fmt.Println("Удвоенное расстояние:", distance)  // 300
+}
+```
+
+### Типовая безопасность с псевдонимами
+
+```go
+package main
+
+import "fmt"
+
+type mile uint
+type kilometer uint
+
+// Функция принимает только мили
+func distanceInMiles(d mile) {
+    fmt.Println("Расстояние:", d, "миль")
+}
+
+// Функция принимает только километры
+func distanceInKm(d kilometer) {
+    fmt.Println("Расстояние:", d, "км")
+}
+
+func main() {
+    var m mile = 100
+    var km kilometer = 160
+    
+    distanceInMiles(m)   // OK
+    distanceInKm(km)     // OK
+    
+    // distanceInMiles(km)  // ОШИБКА! cannot use km (type kilometer) as type mile
+    // distanceInKm(m)      // ОШИБКА! cannot use m (type mile) as type kilometer
+    
+    // Явное преобразование работает
+    distanceInMiles(mile(km))  // OK - явное преобразование
+}
+```
+
+### Псевдонимы для функциональных типов
+
+```go
+package main
+
+import "fmt"
+
+// Длинный тип заменяем коротким псевдонимом
+type BinaryOp func(int, int) int
+type UnaryOp func(int) int
+type Predicate func(int) bool
+
+// Функция принимает операцию
+func calculate(a, b int, op BinaryOp) int {
+    return op(a, b)
+}
+
+// Функция применяет предикат
+func filter(nums []int, pred Predicate) []int {
+    result := []int{}
+    for _, n := range nums {
+        if pred(n) {
+            result = append(result, n)
+        }
+    }
+    return result
+}
+
+func main() {
+    add := func(x, y int) int { return x + y }
+    mul := func(x, y int) int { return x * y }
+    
+    // Используем псевдоним
+    var op BinaryOp = add
+    fmt.Println("5 + 3 =", calculate(5, 3, op))  // 8
+    
+    op = mul
+    fmt.Println("5 * 3 =", calculate(5, 3, op))  // 15
+    
+    // Фильтрация с предикатом
+    nums := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    isEven := func(n int) bool { return n%2 == 0 }
+    evens := filter(nums, isEven)
+    fmt.Println("Чётные:", evens)  // [2 4 6 8 10]
+}
+```
+
+### Практический пример: Валюты
+
+```go
+package main
+
+import "fmt"
+
+type Ruble float64
+type Dollar float64
+type Euro float64
+
+const (
+    RUB_TO_USD = 0.011  // курс рубля к доллару
+    RUB_TO_EUR = 0.010  // курс рубля к евро
+)
+
+func (r Ruble) ToDollar() Dollar {
+    return Dollar(float64(r) * RUB_TO_USD)
+}
+
+func (r Ruble) ToEuro() Euro {
+    return Euro(float64(r) * RUB_TO_EUR)
+}
+
+func (r Ruble) String() string {
+    return fmt.Sprintf("%.2f ₽", r)
+}
+
+func (d Dollar) String() string {
+    return fmt.Sprintf("$%.2f", d)
+}
+
+func (e Euro) String() string {
+    return fmt.Sprintf("€%.2f", e)
+}
+
+func main() {
+    price := Ruble(10000)
+    
+    fmt.Println("Цена в рублях:", price.String())
+    fmt.Println("Цена в долларах:", price.ToDollar().String())
+    fmt.Println("Цена в евро:", price.ToEuro().String())
+}
+```
+
+### Псевдонимы для сложных типов
+
+```go
+package main
+
+import "fmt"
+
+// Псевдонимы для срезов и карт
+type UserList []string
+type Config map[string]string
+type Matrix [][]int
+
+func (ul UserList) Print() {
+    for i, user := range ul {
+        fmt.Printf("%d. %s\n", i+1, user)
+    }
+}
+
+func (c Config) Get(key string) string {
+    if val, ok := c[key]; ok {
+        return val
+    }
+    return ""
+}
+
+func main() {
+    users := UserList{"Alice", "Bob", "Charlie"}
+    users.Print()
+    
+    config := Config{
+        "host": "localhost",
+        "port": "8080",
+    }
+    fmt.Println("Host:", config.Get("host"))
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Смешивание разных псевдонимов одного базового типа
+
+```go
+type mile uint
+type kilometer uint
+
+// ❌ НЕПРАВИЛЬНО
+var m mile = 100
+var km kilometer = m  // cannot use m (type mile) as type kilometer
+
+// ✅ ПРАВИЛЬНО — явное преобразование
+var km kilometer = kilometer(m)
+```
+
+### 2. Присваивание базового типа без преобразования
+
+```go
+type age int
+
+// ❌ НЕПРАВИЛЬНО
+var a age = 25      // OK
+var x int = a       // cannot use a (type age) as type int
+
+// ✅ ПРАВИЛЬНО
+var x int = int(a)  // явное преобразование
+```
+
+### 3. Забыли про несовместимость при передаче в функцию
+
+```go
+type score int
+
+func printScore(s score) {
+    fmt.Println(s)
+}
+
+// ❌ НЕПРАВИЛЬНО
+x := 100
+printScore(x)  // cannot use x (type int) as type score
+
+// ✅ ПРАВИЛЬНО
+printScore(score(x))
+```
+
+### 4. Попытка сравнения разных псевдонимов
+
+```go
+type mile uint
+type kilometer uint
+
+// ❌ НЕПРАВИЛЬНО
+m := mile(100)
+km := kilometer(160)
+if m == km {  // invalid operation: m == km (mismatched types)
+}
+
+// ✅ ПРАВИЛЬНО — преобразуем к одному типу
+if uint(m) == uint(km) {
+    fmt.Println("Равны")
+}
+```
+
+### 5. Неправильное понимание: псевдоним ≠ alias (Go 1.9+)
+
+```go
+// type MyInt = int   // Это ALIAS (истинный псевдоним, полная совместимость)
+// type MyInt int     // Это ОПРЕДЕЛЕНИЕ НОВОГО ТИПА (разные типы!)
+
+type MyInt int  // Новый тип, НЕ совместим с int напрямую
+
+var x MyInt = 10
+var y int = x    // ❌ ОШИБКА
+
+// Для истинного alias используется =
+type MyAlias = int  // MyAlias === int (полная совместимость)
+var a MyAlias = 10
+var b int = a       // ✅ OK
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Псевдоним типа</Title>
+<Prompt>
+Создайте `type UserID = int` и используйте его.
+</Prompt>
+<Hints>
+- `type UserID = int` — псевдоним
+- Псевдоним полностью взаимозаменяем с оригиналом
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type UserID = int
+
+func main() {
+    var id UserID = 42
+    fmt.Println("UserID:", id)
+    fmt.Printf("Тип: %T\n", id)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+UserID: 42
+Тип: int
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Новый тип</Title>
+<Prompt>
+Создайте `type Celsius float64` как новый тип.
+</Prompt>
+<Hints>
+- `type Celsius float64` — новый тип
+- Новый тип несовместим с оригиналом без приведения
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Celsius float64
+
+func main() {
+    temp := Celsius(36.6)
+    fmt.Printf("Температура: %.1f°C\n", temp)
+    fmt.Printf("Тип: %T\n", temp)
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Температура: 36.6°C
+Тип: main.Celsius
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Метод для нового типа</Title>
+<Prompt>
+Добавьте метод `ToFahrenheit()` к типу Celsius.
+</Prompt>
+<Hints>
+- `func (c Celsius) ToFahrenheit() float64 {...}`
+- 100°C = 212°F, 0°C = 32°F
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Celsius float64
+
+// Добавьте метод ToFahrenheit
+
+func main() {
+    // Выведите преобразования
+}
+```
+</StarterCode>
+<ExpectedOutput>
+100°C = 212°F
+0°C = 32°F
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Преобразование между типами</Title>
+<Prompt>
+Создайте типы Celsius и Fahrenheit с методами взаимного преобразования.
+</Prompt>
+<Hints>
+- C = (F - 32) * 5/9
+- F = C * 9/5 + 32
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Celsius float64
+type Fahrenheit float64
+
+// Добавьте методы преобразования
+
+func main() {
+    // Покажите преобразования
+}
+```
+</StarterCode>
+<ExpectedOutput>
+20°C → 68°F
+68°F → 20°C
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Валидация через тип</Title>
+<Prompt>
+Создайте тип Email с методом IsValid().
+</Prompt>
+<Hints>
+- `type Email string`
+- `strings.Contains(string(e), "@")`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+type Email string
+
+// Добавьте метод IsValid
+
+func main() {
+    // Проверьте два email
+}
+```
+</StarterCode>
+<ExpectedOutput>
+test@example.com: valid=true
+invalid-email: valid=false
+</ExpectedOutput>
+</Task>

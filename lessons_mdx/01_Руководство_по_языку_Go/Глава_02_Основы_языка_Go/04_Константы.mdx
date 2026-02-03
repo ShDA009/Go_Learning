@@ -1,0 +1,574 @@
+# Константы
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+- **Константа** — значение, которое нельзя изменить после объявления
+- Константы вычисляются на этапе **компиляции** (быстрее, безопаснее)
+- Константы можно инициализировать только **константными выражениями**
+- `iota` — автоинкрементный генератор для создания последовательностей
+- Константы без типа (untyped) — более гибкие, подстраиваются под контекст
+
+### Зачем нужны константы?
+
+| Причина | Объяснение |
+|---------|------------|
+| Безопасность | Нельзя случайно изменить |
+| Производительность | Вычисляются при компиляции |
+| Читаемость | Дают имена "магическим числам" |
+| Документация | Описывают намерение |
+</Overview>
+
+<Theory>
+### Константа vs Переменная
+
+**Переменная** — значение может меняться:
+```go
+var count = 0
+count = 1  // OK
+count = 2  // OK
+```
+
+**Константа** — значение фиксировано навсегда:
+```go
+const Pi = 3.14159
+Pi = 3.14  // ОШИБКА! Нельзя изменить константу
+```
+
+### Почему константы вычисляются при компиляции?
+
+Константы должны быть известны **до запуска** программы. Поэтому нельзя:
+
+```go
+const now = time.Now()  // ОШИБКА! time.Now() выполняется в runtime
+const x = somefunc()    // ОШИБКА! Функции выполняются в runtime
+```
+
+Можно только константные выражения:
+```go
+const a = 1 + 2         // OK, вычисляется компилятором
+const b = "hello" + "!" // OK
+const c = len("hello")  // OK, len строкового литерала
+```
+
+### Типизированные и нетипизированные константы
+
+**Типизированная константа** — имеет конкретный тип:
+```go
+const Pi float64 = 3.14
+```
+
+**Нетипизированная константа** — адаптируется к контексту:
+```go
+const x = 10  // нетипизированная
+
+var a int32 = x   // x становится int32
+var b int64 = x   // x становится int64
+var c float64 = x // x становится float64
+```
+
+Нетипизированные константы более гибкие и чаще используются.
+
+### iota — генератор последовательностей
+
+`iota` — специальный идентификатор, который:
+- Начинается с 0 в каждом блоке const
+- Увеличивается на 1 для каждой константы
+
+```go
+const (
+    A = iota  // 0
+    B         // 1 (iota автоматически)
+    C         // 2
+)
+```
+
+### Практические применения iota
+
+**1. Дни недели:**
+```go
+const (
+    Sunday = iota  // 0
+    Monday         // 1
+    Tuesday        // 2
+    // ...
+)
+```
+
+**2. Размеры файлов (степени двойки):**
+```go
+const (
+    _  = iota             // 0 (игнорируем)
+    KB = 1 << (10 * iota) // 1 << 10 = 1024
+    MB                    // 1 << 20 = 1048576
+    GB                    // 1 << 30
+)
+```
+
+**3. Битовые флаги:**
+```go
+const (
+    Read    = 1 << iota  // 1
+    Write                // 2
+    Execute              // 4
+)
+permissions := Read | Write  // 3 (чтение + запись)
+```
+
+### Зачем давать имена числам?
+
+Без констант:
+```go
+if status == 200 { ... }  // Что такое 200?
+```
+
+С константами:
+```go
+const StatusOK = 200
+if status == StatusOK { ... }  // Понятно!
+```
+
+Константы делают код самодокументируемым.
+</Theory>
+
+<Syntax>
+### Объявление константы
+```go
+const имя = значение
+const имя тип = значение
+```
+
+### Множественное объявление
+```go
+const (
+    имя1 = значение1
+    имя2 = значение2
+)
+```
+
+### Константа с типом
+```go
+const Pi float64 = 3.14159
+const MaxInt int = 2147483647
+```
+
+### iota
+```go
+const (
+    Zero = iota  // 0
+    One          // 1
+    Two          // 2
+)
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример 1: Базовые константы
+```go
+package main
+
+import "fmt"
+
+func main() {
+    const pi = 3.14159
+    const greeting = "Hello, Go!"
+    const maxUsers = 1000
+    const debug = true
+    
+    fmt.Println("Pi:", pi)
+    fmt.Println("Greeting:", greeting)
+    fmt.Println("Max users:", maxUsers)
+    fmt.Println("Debug:", debug)
+}
+```
+
+### Пример 2: Типизированные константы
+```go
+package main
+
+import "fmt"
+
+func main() {
+    const pi float64 = 3.14159
+    const maxInt8 int8 = 127
+    const char byte = 'A'
+    
+    fmt.Printf("Pi: %v (тип: %T)\n", pi, pi)
+    fmt.Printf("MaxInt8: %v (тип: %T)\n", maxInt8, maxInt8)
+    fmt.Printf("Char: %c (тип: %T)\n", char, char)
+}
+```
+
+### Пример 3: Блок констант
+```go
+package main
+
+import "fmt"
+
+const (
+    AppName    = "MyApp"
+    AppVersion = "1.0.0"
+    MaxRetries = 3
+    Timeout    = 30  // секунды
+)
+
+func main() {
+    fmt.Printf("%s v%s\n", AppName, AppVersion)
+    fmt.Printf("Retries: %d, Timeout: %ds\n", MaxRetries, Timeout)
+}
+```
+
+### Пример 4: Константы с выражениями
+```go
+package main
+
+import "fmt"
+
+const (
+    KB = 1024
+    MB = KB * 1024      // 1048576
+    GB = MB * 1024      // 1073741824
+    TB = GB * 1024      // 1099511627776
+)
+
+func main() {
+    fmt.Printf("1 KB = %d bytes\n", KB)
+    fmt.Printf("1 MB = %d bytes\n", MB)
+    fmt.Printf("1 GB = %d bytes\n", GB)
+    fmt.Printf("1 TB = %d bytes\n", TB)
+}
+```
+
+### Пример 5: iota — базовое использование
+```go
+package main
+
+import "fmt"
+
+const (
+    Sunday = iota  // 0
+    Monday         // 1
+    Tuesday        // 2
+    Wednesday      // 3
+    Thursday       // 4
+    Friday         // 5
+    Saturday       // 6
+)
+
+func main() {
+    fmt.Println("Sunday =", Sunday)
+    fmt.Println("Monday =", Monday)
+    fmt.Println("Friday =", Friday)
+}
+```
+
+### Пример 6: iota — продвинутое использование
+```go
+package main
+
+import "fmt"
+
+// Битовые флаги
+const (
+    Read    = 1 << iota  // 1 << 0 = 1
+    Write                // 1 << 1 = 2
+    Execute              // 1 << 2 = 4
+)
+
+// Пропуск значений
+const (
+    _  = iota  // 0 (игнорируем)
+    A          // 1
+    B          // 2
+    C          // 3
+)
+
+// Начало не с 0
+const (
+    First = iota + 1  // 1
+    Second            // 2
+    Third             // 3
+)
+
+func main() {
+    fmt.Printf("Read=%d, Write=%d, Execute=%d\n", Read, Write, Execute)
+    fmt.Printf("A=%d, B=%d, C=%d\n", A, B, C)
+    fmt.Printf("First=%d, Second=%d, Third=%d\n", First, Second, Third)
+    
+    // Комбинация флагов
+    permissions := Read | Write  // 1 | 2 = 3
+    fmt.Printf("Read+Write = %d\n", permissions)
+}
+```
+
+### Пример 7: Автоповтор значений
+```go
+package main
+
+import "fmt"
+
+const (
+    A = 100
+    B       // 100 (повторяет предыдущее)
+    C       // 100
+    D = 200
+    E       // 200
+)
+
+func main() {
+    fmt.Println(A, B, C, D, E)  // 100 100 100 200 200
+}
+```
+
+### Пример 8: Untyped константы (без типа)
+```go
+package main
+
+import "fmt"
+
+const (
+    x = 42      // untyped int
+    y = 3.14    // untyped float
+    z = "hello" // untyped string
+)
+
+func main() {
+    // Untyped константы адаптируются к контексту
+    var i int = x        // OK: x становится int
+    var f32 float32 = y  // OK: y становится float32
+    var f64 float64 = y  // OK: y становится float64
+    
+    fmt.Println(i, f32, f64)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Попытка изменить константу
+```go
+// ❌ Неправильно
+const pi = 3.14
+pi = 3.14159  // cannot assign to pi
+
+// ✅ Константы нельзя менять — это их суть!
+// Если нужно менять — используйте переменную
+var pi = 3.14
+pi = 3.14159  // OK
+```
+
+### 2. Инициализация константы переменной
+```go
+// ❌ Неправильно
+var x = 10
+const y = x  // x is not constant
+
+// ✅ Правильно — только константные выражения
+const x = 10
+const y = x  // OK: x — константа
+```
+
+### 3. Забыли сбросить iota
+```go
+// ⚠️ iota сбрасывается в каждом новом блоке const
+const (
+    A = iota  // 0
+    B         // 1
+)
+
+const (
+    C = iota  // 0 (не 2!)
+    D         // 1
+)
+```
+
+### 4. Вызов функции в константе
+```go
+// ❌ Неправильно — функции нельзя вызывать в константах
+import "time"
+const now = time.Now()  // time.Now() is not constant
+
+// ✅ Используйте переменную для вычисляемых значений
+var now = time.Now()  // OK
+```
+
+### 5. Константы не занимают память
+```go
+// Интересный факт: константы не имеют адреса
+const x = 10
+// &x — ошибка! cannot take address of x
+
+// Переменные имеют адрес
+var y = 10
+fmt.Println(&y)  // OK
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: Простая константа</Title>
+<Prompt>
+Объявите константу `Pi` со значением 3.14159 и используйте её для вычисления длины окружности с радиусом 5.
+</Prompt>
+<Hints>
+- Синтаксис: `const Pi = 3.14159`
+- Длина окружности = 2 * π * r
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Объявите константу Pi
+
+func main() {
+    radius := 5.0
+    // Вычислите и выведите
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Константа Pi = 3.14159
+Радиус = 5
+Длина окружности = 31.42
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Блок констант</Title>
+<Prompt>
+Создайте блок констант для статусов заказа: Pending=1, Processing=2, Shipped=3, Delivered=4. Выведите все статусы.
+</Prompt>
+<Hints>
+- Блок: `const (Pending = 1 ...)`
+- Каждую константу можно вывести через `Println`
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+// Создайте блок констант
+
+func main() {
+    fmt.Println("Статусы заказа:")
+    // Выведите все статусы
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Статусы заказа:
+Pending = 1
+Processing = 2
+Shipped = 3
+Delivered = 4
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Автоинкремент iota</Title>
+<Prompt>
+Используйте `iota` для создания констант дней недели, начиная с понедельника = 1.
+</Prompt>
+<Hints>
+- `iota` начинается с 0, используйте `iota + 1` для начала с 1
+- Последующие константы автоматически получают следующие значения
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+const (
+    Monday = iota + 1  // = 1
+    // Добавьте остальные дни
+)
+
+func main() {
+    // Выведите дни недели
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Понедельник = 1
+Вторник = 2
+Среда = 3
+Четверг = 4
+Пятница = 5
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="20">
+<Title>Задание 4: Битовые флаги с iota</Title>
+<Prompt>
+Создайте битовые флаги для прав доступа (Read, Write, Execute) используя сдвиг битов с iota. Покажите комбинацию флагов.
+</Prompt>
+<Hints>
+- `1 << iota` даёт: 1, 2, 4, 8, ...
+- Комбинация флагов: `Read | Write` = 1 | 2 = 3
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+const (
+    Read = 1 << iota  // 1
+    Write             // 2
+    Execute           // 4
+)
+
+func main() {
+    // Выведите флаги и их комбинации
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Read = 1 (бит 0)
+Write = 2 (бит 1)
+Execute = 4 (бит 2)
+ReadWrite = 3 (Read | Write)
+All = 7 (Read | Write | Execute)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Типизированные и нетипизированные константы</Title>
+<Prompt>
+Продемонстрируйте разницу между типизированными и нетипизированными константами. Покажите, как нетипизированная константа может использоваться с разными типами.
+</Prompt>
+<Hints>
+- `const x = 100` — нетипизированная
+- `const y int8 = 50` — типизированная
+- Нетипизированные константы адаптируются к контексту
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+const (
+    untyped = 100        // нетипизированная
+    typed int8 = 50      // типизированная
+)
+
+func main() {
+    // Продемонстрируйте использование
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Нетипизированная 100:
+  как int: 100
+  как float64: 100.00
+Типизированная int8 = 50:
+  значение: 50
+</ExpectedOutput>
+</Task>

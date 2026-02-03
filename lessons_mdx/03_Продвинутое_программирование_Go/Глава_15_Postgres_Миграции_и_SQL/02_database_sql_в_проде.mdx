@@ -1,0 +1,189 @@
+# database/sql в проде: пул, транзакции, EXPLAIN
+
+<Meta>
+reading_time: 12
+</Meta>
+
+<Overview>
+1. `sql.DB` — это **пул соединений**, а не одно соединение
+2. В проде обязательно настраивать пул: `SetMaxOpenConns/SetMaxIdleConns/...`
+3. Используйте `QueryContext/ExecContext/BeginTx` и **таймауты** на запросы
+4. Транзакции: `defer tx.Rollback()` + изоляция + атомарность бизнес‑операций
+5. Медленные запросы лечатся через **EXPLAIN/индексы**, а не “магией Go”
+</Overview>
+
+<Theory>
+### Почему настройки пула важны
+
+Если `MaxOpenConns` слишком маленький — запросы будут стоять в очереди.  
+Если слишком большой — вы “убьёте” Postgres количеством соединений.
+
+Правильные настройки зависят от нагрузки и ресурсов, но базовые идеи:
+- ограничить максимум (`SetMaxOpenConns`)
+- держать небольшой idle пул (`SetMaxIdleConns`)
+- выставить lifetimes, чтобы соединения периодически обновлялись
+
+### Контекст и таймауты
+
+SQL‑запросы должны иметь ограничение по времени. Обычно это:
+- таймаут на handler/request (`context.WithTimeout`)
+- контекст пробрасывается до репозитория
+
+### EXPLAIN и индексы
+
+Если запрос медленный:
+- сначала `EXPLAIN (ANALYZE, BUFFERS)` (на тестовой базе!)
+- смотрим seq scan, hash join, sort, количество строк
+- добавляем/правим индексы и сам запрос
+
+В большинстве “плохих” случаев проблема не в Go, а в SQL/индексах/данных.
+</Theory>
+
+<Syntax>
+### Настройка пула
+
+```go
+db.SetMaxOpenConns(20)
+db.SetMaxIdleConns(10)
+db.SetConnMaxLifetime(30 * time.Minute)
+db.SetConnMaxIdleTime(5 * time.Minute)
+```
+
+### Контекстные методы
+
+```go
+row := db.QueryRowContext(ctx, "SELECT ...", arg)
+_, err := db.ExecContext(ctx, "UPDATE ...", arg)
+tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+```
+
+### Шаблон транзакции
+
+```go
+tx, err := db.BeginTx(ctx, nil)
+if err != nil { return err }
+defer tx.Rollback()
+
+// ... tx.ExecContext / tx.QueryRowContext ...
+
+return tx.Commit()
+```
+</Syntax>
+
+<Examples>
+### Пример: репозиторий с контекстом и таймаутом
+
+```go
+func (r *Repo) GetUser(ctx context.Context, id int64) (*User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var u User
+	err := r.db.QueryRowContext(ctx,
+		"SELECT id, email, created_at FROM users WHERE id=$1",
+		id,
+	).Scan(&u.ID, &u.Email, &u.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select user: %w", err)
+	}
+	return &u, nil
+}
+```
+
+### Пример: перевод денег (атомарно)
+
+```go
+func (r *Repo) Transfer(ctx context.Context, from, to int64, amount int64) error {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1) списать
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE accounts SET balance = balance - $1 WHERE id=$2",
+		amount, from,
+	); err != nil {
+		return err
+	}
+
+	// 2) зачислить
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE accounts SET balance = balance + $1 WHERE id=$2",
+		amount, to,
+	); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+```
+
+### Пример: диагностируем медленный запрос
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM users WHERE email = 'user@example.com';
+```
+</Examples>
+
+<Pitfalls>
+1. **Не закрыли rows**: `defer rows.Close()` обязателен
+2. **Не проверили rows.Err()**: ошибки итерации теряются
+3. **Нет таймаута**: запросы висят, пул забивается, сервис деградирует
+4. **N+1**: много запросов вместо одного (лечится JOIN/IN/батчами)
+5. **Слишком много соединений**: Postgres начинает тратить ресурсы на контекст‑свитчи и memory
+</Pitfalls>
+
+<Links>
+- `https://pkg.go.dev/database/sql`
+- `https://www.postgresql.org/docs/current/using-explain.html`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Настройте пул соединений</Title>
+<Prompt>
+В capstone REST проекте настройте пул `database/sql` (или эквивалент для вашего драйвера). Добавьте логирование `db.Stats()` (периодически или по endpoint) для наблюдаемости.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("db pool configured + stats observable")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+db pool configured + stats observable
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Транзакция для бизнес‑операции</Title>
+<Prompt>
+Выберите одну бизнес‑операцию (например, создание заказа + списание товара/баланса) и сделайте её атомарной через транзакцию (`BeginTx` + `Commit/Rollback`).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("tx: business operation is atomic")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+tx: business operation is atomic
+</ExpectedOutput>
+</Task>
+

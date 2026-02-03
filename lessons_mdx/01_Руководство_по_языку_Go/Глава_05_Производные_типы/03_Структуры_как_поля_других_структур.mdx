@@ -1,0 +1,772 @@
+# Вложенные и встроенные структуры в Go
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Вложенные структуры (nested)** — структура как именованное поле другой структуры
+2. **Встроенные структуры (embedded)** — структура как анонимное поле (без имени)
+3. **Продвижение полей** — поля встроенной структуры доступны напрямую из внешней
+4. **Композиция** — Go использует композицию вместо наследования (как в ООП)
+5. **Указатель на структуру того же типа** — для создания связных списков, деревьев
+</Overview>
+
+<Theory>
+### Композиция вместо наследования
+
+В ООП-языках (Java, C++) есть наследование: `class Dog extends Animal`. В Go **наследования нет**. Вместо него используется **композиция** — включение одной структуры в другую.
+
+### Вложенные структуры (Nested)
+
+Одна структура является **полем** другой:
+
+```go
+type Address struct {
+    City   string
+    Street string
+}
+
+type Person struct {
+    Name    string
+    Address Address  // вложенная структура
+}
+
+p := Person{Name: "John", Address: Address{City: "Moscow"}}
+fmt.Println(p.Address.City)  // Moscow
+```
+
+Доступ через **цепочку**: `p.Address.City`
+
+### Встроенные структуры (Embedded)
+
+Структура включается **без имени поля** (анонимно):
+
+```go
+type Person struct {
+    Name string
+    Address  // встроенная (без имени!)
+}
+
+p := Person{Name: "John", Address: Address{City: "Moscow"}}
+fmt.Println(p.City)          // Moscow (напрямую!)
+fmt.Println(p.Address.City)  // Moscow (тоже работает)
+```
+
+Поля встроенной структуры **"продвигаются"** вверх и доступны напрямую.
+
+### Продвижение методов
+
+Методы встроенной структуры тоже продвигаются:
+
+```go
+func (a Address) Format() string {
+    return a.City + ", " + a.Street
+}
+
+p := Person{Address: Address{City: "Moscow", Street: "Тверская"}}
+fmt.Println(p.Format())  // Moscow, Тверская
+```
+
+### Переопределение полей и методов
+
+Если внешняя структура имеет поле/метод с тем же именем, оно имеет приоритет:
+
+```go
+type Person struct {
+    Name string
+    Address
+}
+
+func (p Person) Format() string {
+    return "Person: " + p.Name  // свой метод
+}
+
+p.Format()          // вызовет метод Person
+p.Address.Format()  // вызовет метод Address
+```
+
+### Множественное встраивание
+
+Можно встраивать несколько структур:
+
+```go
+type Named struct {
+    Name string
+}
+
+type Aged struct {
+    Age int
+}
+
+type Person struct {
+    Named  // встроена
+    Aged   // встроена
+}
+
+p := Person{}
+p.Name = "John"  // из Named
+p.Age = 25       // из Aged
+```
+
+### Самоссылающиеся структуры
+
+Для деревьев и списков структура ссылается сама на себя через указатель:
+
+```go
+type Node struct {
+    Value int
+    Next  *Node  // указатель на такую же структуру
+}
+
+// Связный список
+first := &Node{Value: 1}
+first.Next = &Node{Value: 2}
+first.Next.Next = &Node{Value: 3}
+```
+</Theory>
+
+<Syntax>
+### Вложенная структура (именованное поле)
+
+```go
+type Inner struct {
+    field string
+}
+
+type Outer struct {
+    innerField Inner  // вложенная структура
+}
+
+// Доступ: outer.innerField.field
+```
+
+### Встроенная структура (анонимное поле)
+
+```go
+type Inner struct {
+    field string
+}
+
+type Outer struct {
+    Inner  // встроенная структура (без имени)
+}
+
+// Доступ: outer.field (или outer.Inner.field)
+```
+
+### Указатель на структуру того же типа
+
+```go
+type Node struct {
+    value int
+    next  *Node  // указатель на следующий узел
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Вложенная структура
+
+```go
+package main
+
+import "fmt"
+
+type Address struct {
+    city   string
+    street string
+    zip    string
+}
+
+type Person struct {
+    name    string
+    age     int
+    address Address  // вложенная структура с именем
+}
+
+func main() {
+    tom := Person{
+        name: "Tom",
+        age:  30,
+        address: Address{
+            city:   "Moscow",
+            street: "Tverskaya",
+            zip:    "101000",
+        },
+    }
+    
+    // Доступ через имя поля
+    fmt.Println("Имя:", tom.name)
+    fmt.Println("Город:", tom.address.city)
+    fmt.Println("Улица:", tom.address.street)
+}
+```
+
+### Встроенная структура
+
+```go
+package main
+
+import "fmt"
+
+type Address struct {
+    city   string
+    street string
+}
+
+type Person struct {
+    name string
+    age  int
+    Address  // встроенная структура (анонимное поле)
+}
+
+func main() {
+    tom := Person{
+        name: "Tom",
+        age:  30,
+        Address: Address{
+            city:   "Moscow",
+            street: "Tverskaya",
+        },
+    }
+    
+    // Прямой доступ к полям встроенной структуры
+    fmt.Println("Город:", tom.city)    // tom.city вместо tom.Address.city
+    fmt.Println("Улица:", tom.street)
+    
+    // Но можно и через имя типа
+    fmt.Println("Город:", tom.Address.city)
+}
+```
+
+### Сравнение вложенной и встроенной структур
+
+```go
+package main
+
+import "fmt"
+
+type Engine struct {
+    horsepower int
+    fuelType   string
+}
+
+// Вложенная структура — нужен путь через имя поля
+type Car struct {
+    brand  string
+    engine Engine  // именованное поле
+}
+
+// Встроенная структура — поля продвигаются
+type Motorcycle struct {
+    brand string
+    Engine  // анонимное поле
+}
+
+func main() {
+    car := Car{
+        brand:  "Toyota",
+        engine: Engine{horsepower: 150, fuelType: "petrol"},
+    }
+    
+    moto := Motorcycle{
+        brand:  "Honda",
+        Engine: Engine{horsepower: 100, fuelType: "petrol"},
+    }
+    
+    // Для Car нужен полный путь
+    fmt.Println("Мощность машины:", car.engine.horsepower)
+    
+    // Для Motorcycle — прямой доступ
+    fmt.Println("Мощность мотоцикла:", moto.horsepower)
+}
+```
+
+### Множественное встраивание
+
+```go
+package main
+
+import "fmt"
+
+type Name struct {
+    first string
+    last  string
+}
+
+type Job struct {
+    title    string
+    company  string
+}
+
+type Employee struct {
+    Name  // встроенная
+    Job   // встроенная
+    salary float64
+}
+
+func main() {
+    emp := Employee{
+        Name: Name{first: "John", last: "Doe"},
+        Job:  Job{title: "Developer", company: "Google"},
+        salary: 100000,
+    }
+    
+    // Прямой доступ ко всем полям
+    fmt.Println("Имя:", emp.first, emp.last)
+    fmt.Println("Должность:", emp.title)
+    fmt.Println("Компания:", emp.company)
+    fmt.Println("Зарплата:", emp.salary)
+}
+```
+
+### Конфликт имён при встраивании
+
+```go
+package main
+
+import "fmt"
+
+type A struct {
+    value int
+}
+
+type B struct {
+    value string  // такое же имя поля
+}
+
+type C struct {
+    A
+    B
+}
+
+func main() {
+    c := C{
+        A: A{value: 42},
+        B: B{value: "hello"},
+    }
+    
+    // ❌ c.value — неоднозначно (ambiguous selector)
+    
+    // ✅ Указываем конкретную структуру
+    fmt.Println("A.value:", c.A.value)  // 42
+    fmt.Println("B.value:", c.B.value)  // hello
+}
+```
+
+### Связный список (указатель на себя)
+
+```go
+package main
+
+import "fmt"
+
+type Node struct {
+    value int
+    next  *Node  // указатель на следующий узел
+}
+
+func main() {
+    // Создаём связный список: 1 -> 2 -> 3 -> nil
+    node3 := Node{value: 3, next: nil}
+    node2 := Node{value: 2, next: &node3}
+    node1 := Node{value: 1, next: &node2}
+    
+    // Обход списка
+    current := &node1
+    for current != nil {
+        fmt.Print(current.value, " ")
+        current = current.next
+    }
+    // Вывод: 1 2 3
+}
+```
+
+### Двоичное дерево
+
+```go
+package main
+
+import "fmt"
+
+type TreeNode struct {
+    value int
+    left  *TreeNode
+    right *TreeNode
+}
+
+// Рекурсивный обход (in-order)
+func inOrder(node *TreeNode) {
+    if node == nil {
+        return
+    }
+    inOrder(node.left)
+    fmt.Print(node.value, " ")
+    inOrder(node.right)
+}
+
+func main() {
+    //       4
+    //      / \
+    //     2   6
+    //    / \
+    //   1   3
+    
+    tree := &TreeNode{
+        value: 4,
+        left: &TreeNode{
+            value: 2,
+            left:  &TreeNode{value: 1},
+            right: &TreeNode{value: 3},
+        },
+        right: &TreeNode{value: 6},
+    }
+    
+    fmt.Print("In-order: ")
+    inOrder(tree)  // 1 2 3 4 6
+}
+```
+
+### Практический пример: Аккаунт с профилем
+
+```go
+package main
+
+import "fmt"
+
+type Profile struct {
+    firstName string
+    lastName  string
+    bio       string
+}
+
+type Credentials struct {
+    email    string
+    password string
+}
+
+type Account struct {
+    Profile     // встроенная
+    Credentials // встроенная
+    id          int
+    isActive    bool
+}
+
+func (a *Account) FullName() string {
+    return a.firstName + " " + a.lastName
+}
+
+func (a *Account) Activate() {
+    a.isActive = true
+}
+
+func main() {
+    acc := Account{
+        Profile: Profile{
+            firstName: "John",
+            lastName:  "Doe",
+            bio:       "Go developer",
+        },
+        Credentials: Credentials{
+            email:    "john@example.com",
+            password: "secret",
+        },
+        id:       1,
+        isActive: false,
+    }
+    
+    fmt.Println("Полное имя:", acc.FullName())
+    fmt.Println("Email:", acc.email)
+    fmt.Println("Активен:", acc.isActive)
+    
+    acc.Activate()
+    fmt.Println("Активен после активации:", acc.isActive)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Структура не может содержать поле своего типа (не указатель)
+
+```go
+// ❌ НЕПРАВИЛЬНО — бесконечный размер
+type Node struct {
+    value int
+    next  Node  // ОШИБКА: invalid recursive type
+}
+
+// ✅ ПРАВИЛЬНО — используем указатель
+type Node struct {
+    value int
+    next  *Node  // указатель OK
+}
+```
+
+### 2. Забыли инициализировать вложенную структуру
+
+```go
+type Address struct {
+    city string
+}
+
+type Person struct {
+    name    string
+    address Address
+}
+
+// ❌ НЕПРАВИЛЬНО — address пустой, но это не ошибка
+p := Person{name: "Tom"}
+fmt.Println(p.address.city)  // пустая строка
+
+// ✅ ПРАВИЛЬНО — явно инициализируем
+p := Person{
+    name:    "Tom",
+    address: Address{city: "Moscow"},
+}
+```
+
+### 3. Конфликт имён при встраивании
+
+```go
+type A struct {
+    Name string
+}
+
+type B struct {
+    Name string  // одинаковые имена
+}
+
+type C struct {
+    A
+    B
+}
+
+// ❌ НЕПРАВИЛЬНО
+c := C{}
+// c.Name — ambiguous selector
+
+// ✅ ПРАВИЛЬНО — указываем источник
+fmt.Println(c.A.Name)
+fmt.Println(c.B.Name)
+```
+
+### 4. Перезапись значения указателя next
+
+```go
+type Node struct {
+    value int
+    next  *Node
+}
+
+// ❌ НЕПРАВИЛЬНО — теряем ссылку
+node1 := Node{value: 1}
+node2 := Node{value: 2}
+node1.next = &node2
+
+node3 := Node{value: 3}
+node1.next = &node3  // node2 потерян!
+
+// ✅ ПРАВИЛЬНО — вставляем в середину
+node3.next = node1.next
+node1.next = &node3
+```
+
+### 5. Встроенные структуры и JSON
+
+```go
+type Address struct {
+    City string `json:"city"`
+}
+
+type Person struct {
+    Name string `json:"name"`
+    Address     // поля продвигаются в JSON тоже!
+}
+
+// JSON будет: {"name":"Tom","city":"Moscow"}
+// НЕ: {"name":"Tom","Address":{"city":"Moscow"}}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Вложенная структура</Title>
+<Prompt>
+Создайте Person с вложенной структурой Address.
+</Prompt>
+<Hints>
+- Вложение: `Address Address` как поле
+- Доступ через цепочку точек
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Address struct {
+    City, Street string
+}
+
+type Person struct {
+    Name    string
+    Address Address
+}
+
+func main() {
+    // Создайте персону с адресом
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Персона: Alice
+Город: Москва
+Улица: Тверская
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Встроенная структура</Title>
+<Prompt>
+Используйте встраивание структуры для прямого доступа к полям.
+</Prompt>
+<Hints>
+- Встраивание: просто `Address` без имени
+- Поля "поднимаются" на уровень выше
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Address struct {
+    City, Street string
+}
+
+type Person struct {
+    Name string
+    Address // встраивание
+}
+
+func main() {
+    // Покажите оба способа доступа
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Персона: Alice
+Город (прямой доступ): Москва
+Город (через поле): Москва
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: Указатель на вложенную</Title>
+<Prompt>
+Используйте указатель для общей вложенной структуры.
+</Prompt>
+<Hints>
+- `Address *Address`
+- Оба Person получают &addr
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Address struct { City string }
+type Person struct {
+    Name string
+    Addr *Address
+}
+
+func main() {
+    // Покажите общий адрес
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Алиса живёт в: Москва
+Боб живёт в: Москва
+Изменяем город...
+Алиса живёт в: Санкт-Петербург
+Боб живёт в: Санкт-Петербург
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Конфликт имён при встраивании</Title>
+<Prompt>
+Покажите, как разрешить конфликт имён полей.
+</Prompt>
+<Hints>
+- Ближайшее поле имеет приоритет
+- Для доступа к "затенённому" указывайте полный путь
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Person struct { Name string }
+type Employee struct {
+    Person
+    Name string // затеняет Person.Name
+}
+
+func main() {
+    e := Employee{
+        Person: Person{Name: "Alice"},
+        Name:   "Bob",
+    }
+    // Покажите оба имени
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Employee Name: Bob
+Person Name: Alice
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Глубокое вложение</Title>
+<Prompt>
+Создайте трёхуровневое вложение структур.
+</Prompt>
+<Hints>
+- Каждый уровень встраивается
+- addr.Country.Name или addr.Name (если уникально)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+type Country struct { Name string }
+type City struct {
+    Country
+    Name string
+}
+type Address struct {
+    City
+    Street string
+}
+
+func main() {
+    // Создайте и выведите адрес
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Страна: Россия
+Город: Москва
+Улица: Тверская
+</ExpectedOutput>
+</Task>

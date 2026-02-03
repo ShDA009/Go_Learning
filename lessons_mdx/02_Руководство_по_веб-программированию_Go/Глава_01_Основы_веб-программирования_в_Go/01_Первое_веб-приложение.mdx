@@ -1,0 +1,516 @@
+# Первое веб-приложение
+
+<Meta>
+reading_time: 5
+</Meta>
+
+<Overview>
+1. **net/http** — стандартный пакет для веб-приложений
+2. **http.ListenAndServe** — запуск HTTP сервера
+3. **Handler** — интерфейс для обработки запросов
+4. **ResponseWriter** — запись ответа клиенту
+5. **Request** — информация о входящем запросе
+</Overview>
+
+<Theory>
+### Веб-приложение за 5 минут
+
+Go умеет создавать веб-серверы "из коробки" — без внешних зависимостей:
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "Hello, World!")
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+Запустите и откройте http://localhost:8080
+
+### Как это работает?
+
+1. **HandleFunc** — регистрирует обработчик для URL
+2. **ListenAndServe** — запускает сервер на порту
+3. При запросе Go вызывает нужный обработчик
+
+### ResponseWriter — отправка ответа
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    // Установить заголовок
+    w.Header().Set("Content-Type", "application/json")
+    
+    // Установить статус (до Write!)
+    w.WriteHeader(http.StatusOK)  // 200
+    
+    // Записать тело ответа
+    w.Write([]byte(`{"message": "hello"}`))
+}
+```
+
+### Request — информация о запросе
+
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Println(r.Method)        // GET, POST, etc.
+    fmt.Println(r.URL.Path)      // /users/123
+    fmt.Println(r.URL.Query())   // ?key=value
+    fmt.Println(r.Header)        // все заголовки
+    fmt.Println(r.RemoteAddr)    // IP клиента
+}
+```
+
+### Handler vs HandlerFunc
+
+**HandlerFunc** — функция:
+```go
+http.HandleFunc("/", myHandler)
+```
+
+**Handler** — интерфейс:
+```go
+type MyHandler struct{}
+func (h MyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    // ...
+}
+http.Handle("/", MyHandler{})
+```
+
+### Graceful shutdown
+
+```go
+srv := &http.Server{Addr: ":8080"}
+
+go func() {
+    srv.ListenAndServe()
+}()
+
+// Ожидание сигнала остановки
+<-stopChan
+srv.Shutdown(context.Background())
+```
+</Theory>
+
+<Syntax>
+### Запуск сервера
+
+```go
+http.ListenAndServe(addr string, handler Handler) error
+```
+
+### Интерфейс Handler
+
+```go
+type Handler interface {
+    ServeHTTP(ResponseWriter, *Request)
+}
+```
+
+### ResponseWriter — запись ответа
+
+```go
+type ResponseWriter interface {
+    Header() Header                 // заголовки ответа
+    Write([]byte) (int, error)     // запись тела ответа
+    WriteHeader(statusCode int)     // установка статуса
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Минимальное веб-приложение
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+type HelloHandler struct{}
+
+func (h HelloHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "Hello, World!")
+}
+
+func main() {
+    handler := HelloHandler{}
+    
+    fmt.Println("Server started at http://localhost:8080")
+    http.ListenAndServe(":8080", handler)
+}
+```
+
+### Кастомный тип как Handler
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+// Строка может быть Handler'ом!
+type Message string
+
+func (m Message) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, m)
+}
+
+func main() {
+    msg := Message("Welcome to Go Web Server!")
+    
+    fmt.Println("Server started at http://localhost:8080")
+    http.ListenAndServe(":8080", msg)
+}
+```
+
+### Использование HandleFunc
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func main() {
+    // Анонимная функция как handler
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "Home Page")
+    })
+    
+    http.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+        fmt.Fprint(w, "About Page")
+    })
+    
+    fmt.Println("Server started at http://localhost:8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Именованные handler-функции
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "<h1>Welcome Home!</h1>")
+}
+
+func aboutHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "<h1>About Us</h1>")
+}
+
+func contactHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprint(w, "<h1>Contact</h1>")
+}
+
+func main() {
+    http.HandleFunc("/", homeHandler)
+    http.HandleFunc("/about", aboutHandler)
+    http.HandleFunc("/contact", contactHandler)
+    
+    fmt.Println("Server started at http://localhost:8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### HTML ответ
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    // Устанавливаем Content-Type
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    
+    html := `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Go Web App</title>
+</head>
+<body>
+    <h1>Hello from Go!</h1>
+    <p>This is a simple web page.</p>
+</body>
+</html>
+`
+    fmt.Fprint(w, html)
+}
+
+func main() {
+    http.HandleFunc("/", handler)
+    
+    fmt.Println("Server started at http://localhost:8080")
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### JSON ответ
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+)
+
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func userHandler(w http.ResponseWriter, r *http.Request) {
+    user := User{
+        ID:    1,
+        Name:  "John Doe",
+        Email: "john@example.com",
+    }
+    
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+}
+
+func main() {
+    http.HandleFunc("/user", userHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Информация о запросе
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func infoHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Method: %s\n", r.Method)
+    fmt.Fprintf(w, "URL: %s\n", r.URL.Path)
+    fmt.Fprintf(w, "Host: %s\n", r.Host)
+    fmt.Fprintf(w, "User-Agent: %s\n", r.UserAgent())
+    fmt.Fprintf(w, "Remote Addr: %s\n", r.RemoteAddr)
+}
+
+func main() {
+    http.HandleFunc("/", infoHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Установка статуса ответа
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusNotFound)
+    fmt.Fprint(w, "Page not found!")
+}
+
+func serverErrorHandler(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusInternalServerError)
+    fmt.Fprint(w, "Internal server error!")
+}
+
+func createdHandler(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusCreated)
+    fmt.Fprint(w, "Resource created!")
+}
+
+func main() {
+    http.HandleFunc("/notfound", notFoundHandler)
+    http.HandleFunc("/error", serverErrorHandler)
+    http.HandleFunc("/created", createdHandler)
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. WriteHeader после Write
+
+```go
+// ❌ WriteHeader игнорируется после Write
+w.Write([]byte("Hello"))
+w.WriteHeader(http.StatusCreated)  // не сработает!
+
+// ✅ WriteHeader до Write
+w.WriteHeader(http.StatusCreated)
+w.Write([]byte("Created"))
+```
+
+### 2. Забыли указать порт
+
+```go
+// ❌ Не указан порт
+http.ListenAndServe("localhost", nil)  // ошибка!
+
+// ✅ Указан порт
+http.ListenAndServe(":8080", nil)
+http.ListenAndServe("localhost:8080", nil)
+```
+
+### 3. Паника при ошибке
+
+```go
+// ❌ Сервер молча падает
+http.ListenAndServe(":8080", nil)
+
+// ✅ Проверяйте ошибку
+err := http.ListenAndServe(":8080", nil)
+if err != nil {
+    log.Fatal(err)
+}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Chi router</Title>
+<Prompt>
+Создайте роутер с chi.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Chi: r := chi.NewRouter()")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Chi: r := chi.NewRouter()
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: Chi параметры URL</Title>
+<Prompt>
+Получите параметры из URL.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Параметры: chi.URLParam(r, \"id\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Параметры: chi.URLParam(r, "id")
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Chi Route groups</Title>
+<Prompt>
+Создайте группы маршрутов.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Группы: r.Route(\"/api\", func(r chi.Router) {...})")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Группы: r.Route("/api", func(r chi.Router) {...})
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: Chi middleware</Title>
+<Prompt>
+Добавьте middleware.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Middleware: r.Use(middleware.Logger)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Middleware: r.Use(middleware.Logger)
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: Chi context</Title>
+<Prompt>
+Передайте данные через context.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+)
+
+// TODO: Используйте context
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Context: r.WithContext(context.WithValue(...))
+</ExpectedOutput>
+</Task>

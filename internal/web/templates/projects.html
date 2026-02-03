@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    {{template "head" .}}
+    <title>Проекты — Go Learning</title>
+</head>
+<body>
+    {{template "header" .}}
+    
+    <main class="main">
+        <div class="projects-page">
+            <section class="hero">
+                <h1>Проекты</h1>
+                <p class="hero-subtitle">Два capstone-проекта, которые “склеивают” все ключевые темы в один прод‑подобный результат</p>
+            </section>
+
+            <section class="projects">
+                {{range .Projects}}
+                <article class="project-card" id="{{.ID}}">
+                    <header class="project-card-header">
+                        <h2 class="project-title">{{.Title}}</h2>
+                        {{if .Subtitle}}
+                        <p class="project-subtitle">{{.Subtitle}}</p>
+                        {{end}}
+                    </header>
+
+                    <div class="project-body markdown">
+                        {{.SpecMD | markdown}}
+                    </div>
+                </article>
+                {{end}}
+            </section>
+        </div>
+    </main>
+    
+    {{template "footer" .}}
+    {{template "scripts" .}}
+</body>
+</html>
+

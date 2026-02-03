@@ -1,0 +1,687 @@
+# Гонка данных и её обнаружение (Data Race)
+
+<Meta>
+reading_time: 7
+</Meta>
+
+<Overview>
+1. **Гонка данных** — одновременный доступ к памяти из нескольких горутин (минимум одна пишет)
+2. **Недетерминированность** — результат зависит от порядка выполнения
+3. **Race Detector** — встроенный инструмент Go для обнаружения гонок
+4. **Флаг `-race`** — включает детектор при компиляции/запуске
+5. **Решения** — мьютексы, каналы, атомарные операции
+</Overview>
+
+<Theory>
+### Что такое гонка данных?
+
+**Гонка данных (data race)** — это когда:
+1. Две или более горутины обращаются к одной переменной
+2. Хотя бы одна из них **пишет**
+3. Нет синхронизации между ними
+
+```go
+// ГОНКА ДАННЫХ!
+var counter int
+
+go func() { counter++ }()
+go func() { counter++ }()
+
+// counter может быть 1 или 2 — недетерминированно!
+```
+
+### Почему это опасно?
+
+Результат непредсказуем и может меняться:
+- Между запусками программы
+- На разных компьютерах
+- При изменении нагрузки системы
+
+Баги от гонок данных **крайне сложно воспроизвести и отладить**.
+
+### Race Detector — ваш друг
+
+Go имеет встроенный детектор гонок:
+
+```bash
+go run -race main.go
+go test -race ./...
+go build -race -o myapp main.go
+```
+
+**Всегда запускайте тесты с `-race` в CI/CD!**
+
+### Как работает Race Detector?
+
+Инструментирует код и отслеживает:
+- Все обращения к памяти
+- Из какой горутины
+- В какое время
+
+При обнаружении гонки выводит отчёт с трассировкой.
+
+### Три способа избежать гонок
+
+**1. Мьютексы (sync.Mutex)**
+```go
+var mu sync.Mutex
+var counter int
+
+mu.Lock()
+counter++
+mu.Unlock()
+```
+
+**2. Каналы**
+```go
+// Владелец данных — одна горутина
+updates := make(chan int)
+go func() {
+    counter := 0
+    for delta := range updates {
+        counter += delta
+    }
+}()
+```
+
+**3. Атомарные операции (sync/atomic)**
+```go
+var counter int64
+atomic.AddInt64(&counter, 1)
+```
+
+### Когда что использовать?
+
+| Ситуация | Решение |
+|----------|---------|
+| Простой счётчик | `sync/atomic` |
+| Защита структуры | `sync.Mutex` |
+| Передача данных между горутинами | Каналы |
+| Много читателей, редкие записи | `sync.RWMutex` |
+
+### Ложное чувство безопасности
+
+```go
+// ЭТО ВСЁ РАВНО ГОНКА!
+var done bool
+
+go func() {
+    doWork()
+    done = true  // запись
+}()
+
+for !done {  // чтение без синхронизации
+    // ждём
+}
+```
+
+Даже простые bool/int переменные нуждаются в синхронизации!
+</Theory>
+
+<Syntax>
+### Запуск с Race Detector
+
+```bash
+# Запуск с детектором
+go run -race main.go
+
+# Сборка с детектором
+go build -race -o program main.go
+
+# Тесты с детектором
+go test -race ./...
+```
+
+### Race Detector выводит
+
+```
+WARNING: DATA RACE
+Read at 0x... by goroutine X:
+  main.function()
+      /path/file.go:LINE
+
+Previous write at 0x... by goroutine Y:
+  main.function()
+      /path/file.go:LINE
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Пример гонки данных
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+var counter int  // общая переменная
+
+func increment(wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    for i := 0; i < 1000; i++ {
+        counter++  // ❌ Гонка! Чтение и запись без синхронизации
+    }
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    wg.Add(2)
+    go increment(&wg)
+    go increment(&wg)
+    
+    wg.Wait()
+    
+    // Ожидаем 2000, но результат непредсказуем!
+    fmt.Println("Counter:", counter)
+}
+```
+
+### Запуск с Race Detector
+
+```bash
+$ go run -race main.go
+==================
+WARNING: DATA RACE
+Read at 0x00c0000140a8 by goroutine 8:
+  main.increment()
+      /main.go:12 +0x50
+
+Previous write at 0x00c0000140a8 by goroutine 7:
+  main.increment()
+      /main.go:12 +0x64
+
+Goroutine 8 (running) created at:
+  main.main()
+      /main.go:20 +0x90
+
+Goroutine 7 (running) created at:
+  main.main()
+      /main.go:19 +0x70
+==================
+Counter: 1847
+Found 1 data race(s)
+```
+
+### Исправление: sync.Mutex
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+var (
+    counter int
+    mutex   sync.Mutex
+)
+
+func increment(wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    for i := 0; i < 1000; i++ {
+        mutex.Lock()
+        counter++  // ✅ Защищено мьютексом
+        mutex.Unlock()
+    }
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    wg.Add(2)
+    go increment(&wg)
+    go increment(&wg)
+    
+    wg.Wait()
+    
+    fmt.Println("Counter:", counter)  // Всегда 2000
+}
+```
+
+### Исправление: sync/atomic
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "sync/atomic"
+)
+
+var counter int64  // atomic требует int32/int64
+
+func increment(wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    for i := 0; i < 1000; i++ {
+        atomic.AddInt64(&counter, 1)  // ✅ Атомарная операция
+    }
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    wg.Add(2)
+    go increment(&wg)
+    go increment(&wg)
+    
+    wg.Wait()
+    
+    fmt.Println("Counter:", atomic.LoadInt64(&counter))  // Всегда 2000
+}
+```
+
+### Исправление: Каналы
+
+```go
+package main
+
+import "fmt"
+
+func increment(ch chan int, n int) {
+    for i := 0; i < n; i++ {
+        ch <- 1  // Отправляем единицу
+    }
+}
+
+func main() {
+    ch := make(chan int)
+    
+    go increment(ch, 1000)
+    go increment(ch, 1000)
+    
+    counter := 0
+    for i := 0; i < 2000; i++ {
+        counter += <-ch  // Единственный получатель
+    }
+    
+    fmt.Println("Counter:", counter)  // Всегда 2000
+}
+```
+
+### Гонка при чтении и записи map
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    m := make(map[string]int)
+    var wg sync.WaitGroup
+    
+    // ❌ Гонка данных!
+    wg.Add(2)
+    go func() {
+        defer wg.Done()
+        for i := 0; i < 1000; i++ {
+            m["key"] = i  // Запись
+        }
+    }()
+    go func() {
+        defer wg.Done()
+        for i := 0; i < 1000; i++ {
+            _ = m["key"]  // Чтение
+        }
+    }()
+    
+    wg.Wait()
+    fmt.Println(m["key"])
+}
+```
+
+### Исправление: sync.Map
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var m sync.Map  // ✅ Потокобезопасный map
+    var wg sync.WaitGroup
+    
+    wg.Add(2)
+    go func() {
+        defer wg.Done()
+        for i := 0; i < 1000; i++ {
+            m.Store("key", i)
+        }
+    }()
+    go func() {
+        defer wg.Done()
+        for i := 0; i < 1000; i++ {
+            m.Load("key")
+        }
+    }()
+    
+    wg.Wait()
+    val, _ := m.Load("key")
+    fmt.Println(val)
+}
+```
+
+### Гонка в проверке и изменении
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+var value = 100
+
+func checkAndUpdate(id int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    // ❌ TOCTOU race (Time Of Check To Time Of Use)
+    if value == 100 {
+        time.Sleep(10 * time.Millisecond)
+        value = id  // Другая горутина могла изменить!
+        fmt.Printf("Goroutine %d updated value to %d\n", id, id)
+    }
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    wg.Add(3)
+    go checkAndUpdate(1, &wg)
+    go checkAndUpdate(2, &wg)
+    go checkAndUpdate(3, &wg)
+    
+    wg.Wait()
+    fmt.Println("Final value:", value)
+}
+```
+
+### Исправление TOCTOU
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+var (
+    value = 100
+    mu    sync.Mutex
+)
+
+func checkAndUpdate(id int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    mu.Lock()
+    defer mu.Unlock()
+    
+    // ✅ Проверка и изменение атомарны
+    if value == 100 {
+        time.Sleep(10 * time.Millisecond)
+        value = id
+        fmt.Printf("Goroutine %d updated value to %d\n", id, id)
+    }
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    wg.Add(3)
+    go checkAndUpdate(1, &wg)
+    go checkAndUpdate(2, &wg)
+    go checkAndUpdate(3, &wg)
+    
+    wg.Wait()
+    fmt.Println("Final value:", value)
+}
+```
+
+### Практический пример: Безопасный счётчик
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+type SafeCounter struct {
+    mu    sync.Mutex
+    value int
+}
+
+func (c *SafeCounter) Increment() {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.value++
+}
+
+func (c *SafeCounter) Decrement() {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.value--
+}
+
+func (c *SafeCounter) Value() int {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    return c.value
+}
+
+func main() {
+    counter := &SafeCounter{}
+    var wg sync.WaitGroup
+    
+    // 100 горутин инкрементируют
+    for i := 0; i < 100; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for j := 0; j < 100; j++ {
+                counter.Increment()
+            }
+        }()
+    }
+    
+    wg.Wait()
+    fmt.Println("Final value:", counter.Value())  // 10000
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Чтение без синхронизации
+
+```go
+// ❌ Чтение тоже должно быть синхронизировано!
+func getValue() int {
+    return counter  // Гонка, если другая горутина пишет
+}
+
+// ✅ Защищаем чтение
+func getValue() int {
+    mu.Lock()
+    defer mu.Unlock()
+    return counter
+}
+```
+
+### 2. Закрытие канала несколькими горутинами
+
+```go
+// ❌ Гонка — кто первый закроет?
+go func() { close(ch) }()
+go func() { close(ch) }()
+
+// ✅ Используйте sync.Once
+var once sync.Once
+go func() { once.Do(func() { close(ch) }) }()
+go func() { once.Do(func() { close(ch) }) }()
+```
+
+### 3. Race detector не находит все гонки
+
+```go
+// ⚠️ Race detector работает в runtime
+// Гонка проявится только если горутины выполнятся параллельно
+// Запускайте тесты многократно: go test -race -count=100
+```
+
+### 4. Игнорирование предупреждений race detector
+
+```go
+// ❌ "Работает же!"
+// Race detector нашёл гонку — это ошибка, которую НУЖНО исправить
+// Даже если программа "работает", результат недетерминирован
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: math.Abs</Title>
+<Prompt>
+Получите абсолютное значение.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("|-5.5| = %.1f\n", math.Abs(-5.5))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+|-5.5| = 5.5
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: math.Pow и Sqrt</Title>
+<Prompt>
+Вычислите степень и корень.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("2^10 = %.0f\n", math.Pow(2, 10))
+    fmt.Printf("√16 = %.0f\n", math.Sqrt(16))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+2^10 = 1024
+√16 = 4
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: math.Floor и Ceil</Title>
+<Prompt>
+Округлите вниз и вверх.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("Floor(3.7) = %.0f\n", math.Floor(3.7))
+    fmt.Printf("Ceil(3.2) = %.0f\n", math.Ceil(3.2))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Floor(3.7) = 3
+Ceil(3.2) = 4
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="10">
+<Title>Задание 4: math.Round</Title>
+<Prompt>
+Округлите до ближайшего целого.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("Round(3.4) = %.0f\n", math.Round(3.4))
+    fmt.Printf("Round(3.5) = %.0f\n", math.Round(3.5))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Round(3.4) = 3
+Round(3.5) = 4
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: math.Min и Max</Title>
+<Prompt>
+Найдите минимум и максимум.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import (
+    "fmt"
+    "math"
+)
+
+func main() {
+    fmt.Printf("Min(3, 5) = %.0f\n", math.Min(3, 5))
+    fmt.Printf("Max(3, 5) = %.0f\n", math.Max(3, 5))
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Min(3, 5) = 3
+Max(3, 5) = 5
+</ExpectedOutput>
+</Task>

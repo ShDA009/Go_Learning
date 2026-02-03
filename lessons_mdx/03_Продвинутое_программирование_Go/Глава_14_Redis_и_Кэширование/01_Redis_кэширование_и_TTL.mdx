@@ -1,0 +1,184 @@
+# Redis: кэширование и TTL
+
+<Meta>
+reading_time: 10
+</Meta>
+
+<Overview>
+1. Redis часто используют как **кэш** и как “быстрое хранилище” для счётчиков/сессий
+2. Основной паттерн для backend — **cache-aside** (приложение управляет кэшем)
+3. TTL и инвалидация — ключ к корректности (иначе stale data)
+4. Частая проблема — **cache stampede** (thundering herd) при истечении TTL
+5. В проде важны: ключи, сериализация, размер значений, наблюдаемость и деградация
+</Overview>
+
+<Theory>
+### Где Redis полезен в REST capstone
+
+Примеры:
+- кэш справочников (страны/роли/конфиги)
+- кэш “дорогих” запросов (популярные списки)
+- rate limiting (по ключу пользователя/IP)
+- хранение refresh token с возможностью revoke (по ID)
+
+### Cache-aside (read-through руками)
+
+Алгоритм:
+1) пробуем прочитать из Redis по ключу
+2) если miss → читаем из БД
+3) кладём в Redis с TTL
+4) возвращаем ответ
+
+### Инвалидация
+
+Самый сложный аспект кэша — **согласованность**.
+
+Минимально рабочие стратегии:
+- короткий TTL для данных, которые часто меняются
+- явная инвалидация ключа после записи (write → delete cache)
+- versioning ключей (например, `users:v2:...`)
+
+### Cache stampede
+
+Если TTL истёк и 100 запросов одновременно пошли в БД — вы получите всплеск нагрузки.
+Типовые решения:
+- jitter (случайная добавка к TTL)
+- singleflight (один запрос “прогревает”, остальные ждут)
+- stale-while-revalidate (отдаём старое, обновляем в фоне)
+</Theory>
+
+<Syntax>
+### Ключи и TTL
+
+Рекомендации по ключам:
+- используйте префиксы: `users:by_id:123`
+- не кладите PII в ключ
+- не делайте ключи слишком длинными
+
+TTL:
+- для “горячих” данных 10–60 секунд часто достаточно
+- для справочников может быть минуты/часы (если есть инвалидация)
+
+### Типовая API go-redis (пример)
+
+```go
+val, err := rdb.Get(ctx, key).Bytes()
+if err == redis.Nil { /* miss */ }
+
+_ = rdb.Set(ctx, key, val, 30*time.Second).Err()
+```
+</Syntax>
+
+<Examples>
+### Пример: cache-aside (псевдокод)
+
+```go
+func (s *Service) GetUser(ctx context.Context, id int64) (*User, error) {
+	key := fmt.Sprintf("users:by_id:%d", id)
+
+	// 1) cache
+	if b, err := s.redis.Get(ctx, key).Bytes(); err == nil {
+		var u User
+		if json.Unmarshal(b, &u) == nil {
+			return &u, nil
+		}
+	}
+
+	// 2) db
+	u, err := s.repo.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3) set cache (best-effort)
+	b, _ := json.Marshal(u)
+	_ = s.redis.Set(ctx, key, b, 30*time.Second).Err()
+
+	return u, nil
+}
+```
+
+### Пример: TTL + jitter
+
+```go
+ttl := 30*time.Second + time.Duration(rand.Intn(10))*time.Second
+_ = rdb.Set(ctx, key, b, ttl).Err()
+```
+</Examples>
+
+<Pitfalls>
+1. **Кэш как источник истины**: почти всегда Redis должен быть “ускорителем”, а не единственным хранилищем
+2. **Нет деградации**: если Redis упал — сервис не должен падать вместе с ним
+3. **Слишком большие значения**: рост latency и памяти
+4. **Неправильная сериализация**: несовместимость версий (v1/v2 структуры)
+5. **Слишком длинный TTL без инвалидации**: stale data и баги “почему не обновилось”
+</Pitfalls>
+
+<Links>
+- `https://redis.io/docs/latest/`
+- `https://github.com/redis/go-redis`
+</Links>
+
+<Task id="1" points="10">
+<Title>Задание 1: Выберите, что кэшировать</Title>
+<Prompt>
+Для capstone REST проекта выберите 2 endpoint’а/операции, которые логично ускорять кэшем. Для каждого — ключ, TTL, стратегия инвалидации.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("cache plan: endpoints, keys, TTL, invalidation")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+cache plan: endpoints, keys, TTL, invalidation
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Реализуйте cache-aside</Title>
+<Prompt>
+Реализуйте cache-aside для чтения одной сущности (например, `GET /users/{id}`): сначала Redis, затем БД, затем запись в Redis best-effort.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("cache-aside implemented (redis -> db -> redis)")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+cache-aside implemented (redis -> db -> redis)
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Защита от stampede</Title>
+<Prompt>
+Добавьте простую защиту от stampede: jitter на TTL и/или singleflight (один запрос прогревает кэш).
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("anti-stampede: jitter and/or singleflight")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+anti-stampede: jitter and/or singleflight
+</ExpectedOutput>
+</Task>
+

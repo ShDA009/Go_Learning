@@ -1,0 +1,735 @@
+# Синтаксис шаблонов
+
+<Meta>
+reading_time: 8
+</Meta>
+
+<Overview>
+1. **{{ range }}** — цикл по коллекции
+2. **{{ if }}** — условные конструкции
+3. **{{ with }}** — изменение контекста
+4. **Операторы сравнения** — eq, ne, lt, gt, le, ge
+5. **Логические операторы** — and, or, not
+</Overview>
+
+<Theory>
+### range — итерация по коллекциям
+
+```go
+data := struct {
+    Items []string
+}{
+    Items: []string{"Go", "Python", "JavaScript"},
+}
+```
+
+```html
+{{ range .Items }}
+    <li>{{ . }}</li>
+{{ end }}
+```
+
+Результат:
+```html
+<li>Go</li>
+<li>Python</li>
+<li>JavaScript</li>
+```
+
+### range с индексом
+
+```html
+{{ range $index, $item := .Items }}
+    <li>{{ $index }}: {{ $item }}</li>
+{{ end }}
+```
+
+### range с else (пустая коллекция)
+
+```html
+{{ range .Items }}
+    <li>{{ . }}</li>
+{{ else }}
+    <p>Список пуст</p>
+{{ end }}
+```
+
+### if — условия
+
+```html
+{{ if .LoggedIn }}
+    <p>Добро пожаловать, {{ .Username }}!</p>
+{{ else }}
+    <a href="/login">Войти</a>
+{{ end }}
+```
+
+### Операторы сравнения
+
+```html
+{{ if eq .Status "active" }}Активен{{ end }}
+{{ if ne .Count 0 }}Есть элементы{{ end }}
+{{ if lt .Age 18 }}Несовершеннолетний{{ end }}
+{{ if gt .Price 100 }}Дорого{{ end }}
+```
+
+| Оператор | Значение |
+|----------|----------|
+| `eq` | == |
+| `ne` | != |
+| `lt` | < |
+| `gt` | > |
+| `le` | <= |
+| `ge` | >= |
+
+### Логические операторы
+
+```html
+{{ if and .LoggedIn .IsAdmin }}
+    Админ панель
+{{ end }}
+
+{{ if or .IsModerator .IsAdmin }}
+    Модерация
+{{ end }}
+
+{{ if not .Disabled }}
+    Активно
+{{ end }}
+```
+
+### with — изменение контекста
+
+```go
+data := struct {
+    User struct {
+        Name  string
+        Email string
+    }
+}{}
+```
+
+```html
+{{ with .User }}
+    <p>{{ .Name }}</p>     <!-- .User.Name -->
+    <p>{{ .Email }}</p>    <!-- .User.Email -->
+{{ end }}
+```
+
+### Переменные
+
+```html
+{{ $name := .User.Name }}
+<h1>{{ $name }}</h1>
+<p>Имя: {{ $name }}</p>
+```
+
+### define и template — переиспользование
+
+```html
+{{ define "header" }}
+    <header><h1>{{.Title}}</h1></header>
+{{ end }}
+
+{{ template "header" . }}
+```
+</Theory>
+
+<Syntax>
+### Циклы
+
+```go
+{{ range .Items }}
+    {{ . }}
+{{ end }}
+
+{{ range $index, $item := .Items }}
+    {{ $index }}: {{ $item }}
+{{ end }}
+
+{{ range .Items }}
+    {{ . }}
+{{ else }}
+    No items
+{{ end }}
+```
+
+### Условия
+
+```go
+{{ if .Condition }}
+    True
+{{ end }}
+
+{{ if .Condition }}
+    True
+{{ else }}
+    False
+{{ end }}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Цикл range — простой список
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        users := []string{"Alice", "Bob", "Charlie"}
+        
+        tmpl := template.Must(template.New("list").Parse(`
+<ul>
+{{ range . }}
+    <li>{{ . }}</li>
+{{ end }}
+</ul>
+        `))
+        
+        tmpl.Execute(w, users)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Цикл с индексом
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        items := []string{"First", "Second", "Third"}
+        
+        tmpl := template.Must(template.New("list").Parse(`
+<ol>
+{{ range $i, $item := . }}
+    <li>{{ $i }}: {{ $item }}</li>
+{{ end }}
+</ol>
+        `))
+        
+        tmpl.Execute(w, items)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Цикл по структурам
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type User struct {
+    Name  string
+    Email string
+    Age   int
+}
+
+type PageData struct {
+    Title string
+    Users []User
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        data := PageData{
+            Title: "Users",
+            Users: []User{
+                {Name: "Alice", Email: "alice@example.com", Age: 25},
+                {Name: "Bob", Email: "bob@example.com", Age: 30},
+                {Name: "Charlie", Email: "charlie@example.com", Age: 35},
+            },
+        }
+        
+        tmpl := template.Must(template.New("users").Parse(`
+<h1>{{ .Title }}</h1>
+<table>
+    <tr><th>Name</th><th>Email</th><th>Age</th></tr>
+    {{ range .Users }}
+    <tr>
+        <td>{{ .Name }}</td>
+        <td>{{ .Email }}</td>
+        <td>{{ .Age }}</td>
+    </tr>
+    {{ end }}
+</table>
+        `))
+        
+        tmpl.Execute(w, data)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Range с else (пустая коллекция)
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        items := []string{}  // пустой slice
+        
+        tmpl := template.Must(template.New("list").Parse(`
+<h2>Items:</h2>
+{{ range . }}
+    <p>{{ . }}</p>
+{{ else }}
+    <p>No items found</p>
+{{ end }}
+        `))
+        
+        tmpl.Execute(w, items)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Условия if/else
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type PageData struct {
+    LoggedIn bool
+    Username string
+    IsAdmin  bool
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        data := PageData{
+            LoggedIn: true,
+            Username: "John",
+            IsAdmin:  false,
+        }
+        
+        tmpl := template.Must(template.New("page").Parse(`
+{{ if .LoggedIn }}
+    <p>Welcome, {{ .Username }}!</p>
+    {{ if .IsAdmin }}
+        <a href="/admin">Admin Panel</a>
+    {{ else }}
+        <a href="/profile">My Profile</a>
+    {{ end }}
+{{ else }}
+    <p>Please <a href="/login">login</a></p>
+{{ end }}
+        `))
+        
+        tmpl.Execute(w, data)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Операторы сравнения
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type Product struct {
+    Name     string
+    Price    int
+    Quantity int
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        product := Product{Name: "Phone", Price: 500, Quantity: 3}
+        
+        tmpl := template.Must(template.New("product").Parse(`
+<h1>{{ .Name }}</h1>
+<p>Price: ${{ .Price }}</p>
+
+{{ if gt .Price 100 }}
+    <span class="expensive">Expensive!</span>
+{{ end }}
+
+{{ if eq .Quantity 0 }}
+    <span class="out-of-stock">Out of stock</span>
+{{ else if lt .Quantity 5 }}
+    <span class="low-stock">Only {{ .Quantity }} left!</span>
+{{ else }}
+    <span class="in-stock">In stock</span>
+{{ end }}
+        `))
+        
+        tmpl.Execute(w, product)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Логические операторы
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type User struct {
+    IsAdmin     bool
+    IsVerified  bool
+    IsBanned    bool
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        user := User{IsAdmin: false, IsVerified: true, IsBanned: false}
+        
+        tmpl := template.Must(template.New("user").Parse(`
+{{ if and .IsVerified (not .IsBanned) }}
+    <p>User can post comments</p>
+{{ end }}
+
+{{ if or .IsAdmin .IsVerified }}
+    <p>User has special privileges</p>
+{{ end }}
+
+{{ if and .IsAdmin (not .IsBanned) }}
+    <a href="/admin">Admin Panel</a>
+{{ end }}
+        `))
+        
+        tmpl.Execute(w, user)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### With — изменение контекста
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type Address struct {
+    Street  string
+    City    string
+    Country string
+}
+
+type Person struct {
+    Name    string
+    Address *Address
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        person := Person{
+            Name: "John",
+            Address: &Address{
+                Street:  "123 Main St",
+                City:    "New York",
+                Country: "USA",
+            },
+        }
+        
+        tmpl := template.Must(template.New("person").Parse(`
+<h1>{{ .Name }}</h1>
+
+{{ with .Address }}
+<div class="address">
+    <p>{{ .Street }}</p>
+    <p>{{ .City }}, {{ .Country }}</p>
+</div>
+{{ else }}
+<p>No address provided</p>
+{{ end }}
+        `))
+        
+        tmpl.Execute(w, person)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Переменные в шаблонах
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type PageData struct {
+    Title   string
+    Items   []string
+    BaseURL string
+}
+
+func main() {
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        data := PageData{
+            Title:   "My Page",
+            Items:   []string{"Item 1", "Item 2", "Item 3"},
+            BaseURL: "https://example.com",
+        }
+        
+        tmpl := template.Must(template.New("page").Parse(`
+{{ $title := .Title }}
+{{ $base := .BaseURL }}
+
+<h1>{{ $title }}</h1>
+<ul>
+{{ range $i, $item := .Items }}
+    <li>
+        <a href="{{ $base }}/item/{{ $i }}">{{ $item }}</a>
+    </li>
+{{ end }}
+</ul>
+        `))
+        
+        tmpl.Execute(w, data)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### Вложенные шаблоны (define/template)
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+type PageData struct {
+    Title   string
+    Content string
+}
+
+const templates = `
+{{ define "header" }}
+<header>
+    <h1>{{ .Title }}</h1>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
+</header>
+{{ end }}
+
+{{ define "footer" }}
+<footer>
+    <p>&copy; 2025 My Company</p>
+</footer>
+{{ end }}
+
+{{ define "page" }}
+<!DOCTYPE html>
+<html>
+<body>
+    {{ template "header" . }}
+    <main>{{ .Content }}</main>
+    {{ template "footer" . }}
+</body>
+</html>
+{{ end }}
+`
+
+func main() {
+    tmpl := template.Must(template.New("").Parse(templates))
+    
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        data := PageData{
+            Title:   "Welcome",
+            Content: "This is the home page content.",
+        }
+        tmpl.ExecuteTemplate(w, "page", data)
+    })
+    
+    http.ListenAndServe(":8080", nil)
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Пробелы в выражениях
+
+```go
+// ❌ Лишние переводы строк в выводе
+{{ range .Items }}
+{{ . }}
+{{ end }}
+
+// ✅ Используйте - для trim
+{{- range .Items }}
+{{ . }}
+{{- end }}
+```
+
+### 2. Неверный контекст в range
+
+```go
+// ❌ Внутри range контекст меняется
+{{ range .Users }}
+    {{ .PageTitle }}  // Ошибка! PageTitle — в родителе
+{{ end }}
+
+// ✅ Используйте $ для корневого контекста
+{{ range .Users }}
+    {{ $.PageTitle }}
+{{ end }}
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Docker образ</Title>
+<Prompt>
+Создайте Dockerfile для Go.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Dockerfile: FROM golang:1.22, COPY, RUN go build")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Dockerfile: FROM golang:1.22, COPY, RUN go build
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: Multi-stage build</Title>
+<Prompt>
+Оптимизируйте образ.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Multi-stage: builder image + scratch/alpine")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Multi-stage: builder image + scratch/alpine
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: Docker Compose</Title>
+<Prompt>
+Настройте docker-compose.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Compose: services: app, db, redis")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Compose: services: app, db, redis
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Health checks</Title>
+<Prompt>
+Добавьте healthcheck endpoint.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Health: GET /health -> {\"status\": \"ok\"}")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Health: GET /health -> {"status": "ok"}
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: Environment variables</Title>
+<Prompt>
+Конфигурация через env.
+</Prompt>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Env: os.Getenv(\"DATABASE_URL\")")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Env: os.Getenv("DATABASE_URL")
+</ExpectedOutput>
+</Task>

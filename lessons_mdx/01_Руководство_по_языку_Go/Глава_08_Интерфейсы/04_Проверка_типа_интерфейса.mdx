@@ -1,0 +1,766 @@
+# Проверка типа интерфейса (Type Assertion & Type Switch)
+
+<Meta>
+reading_time: 9
+</Meta>
+
+<Overview>
+1. **Type Assertion** — извлечение конкретного типа из интерфейса
+2. **Type Switch** — ветвление по типу значения интерфейса
+3. **Безопасная проверка** — использование двух возвращаемых значений (value, ok)
+4. **Panic** — небезопасное утверждение типа вызывает panic при несовпадении
+5. **Применение** — обработка разных типов в универсальных функциях
+</Overview>
+
+<Theory>
+### Проблема: что внутри интерфейса?
+
+Интерфейсная переменная может хранить значение любого типа:
+```go
+var x interface{} = 42
+var y interface{} = "hello"
+var z interface{} = []int{1, 2, 3}
+```
+
+Как узнать реальный тип и работать с ним?
+
+### Type Assertion — извлечение типа
+
+```go
+var i interface{} = "hello"
+
+// Небезопасно — panic если не string
+s := i.(string)
+
+// Безопасно — ok показывает успех
+s, ok := i.(string)
+if ok {
+    fmt.Println("Это строка:", s)
+} else {
+    fmt.Println("Это не строка")
+}
+```
+
+### Когда использовать Type Assertion?
+
+1. **Знаете точный тип** — используйте небезопасную версию
+2. **Не уверены в типе** — используйте безопасную с `ok`
+3. **Много типов** — используйте Type Switch
+
+### Type Switch — множество типов
+
+```go
+func describe(i interface{}) {
+    switch v := i.(type) {
+    case int:
+        fmt.Println("int:", v*2)
+    case string:
+        fmt.Println("string len:", len(v))
+    case []int:
+        fmt.Println("slice sum:", sum(v))
+    default:
+        fmt.Println("unknown type")
+    }
+}
+```
+
+**Важно:** `i.(type)` работает **только** внутри switch!
+
+### Практическое применение
+
+**1. Обработка JSON:**
+```go
+var data interface{}
+json.Unmarshal([]byte(`{"name":"John"}`), &data)
+
+// data — это map[string]interface{}
+m := data.(map[string]interface{})
+name := m["name"].(string)
+```
+
+**2. Проверка реализации интерфейса:**
+```go
+type Stringer interface {
+    String() string
+}
+
+func ToString(v interface{}) string {
+    if s, ok := v.(Stringer); ok {
+        return s.String()  // тип реализует Stringer
+    }
+    return fmt.Sprintf("%v", v)
+}
+```
+
+**3. Обработка ошибок:**
+```go
+if pathErr, ok := err.(*os.PathError); ok {
+    fmt.Println("Path:", pathErr.Path)
+    fmt.Println("Op:", pathErr.Op)
+}
+```
+
+### empty interface vs any
+
+С Go 1.18 появился псевдоним:
+```go
+type any = interface{}
+```
+
+Теперь можно писать:
+```go
+func Print(v any) {
+    fmt.Println(v)
+}
+```
+
+### Осторожно с interface{}
+
+Потеря информации о типе — это **антипаттерн**:
+```go
+// ПЛОХО
+func Add(a, b interface{}) interface{} {
+    return a.(int) + b.(int)  // может упасть!
+}
+
+// ХОРОШО (используйте generics)
+func Add[T int | float64](a, b T) T {
+    return a + b
+}
+```
+
+Используйте `interface{}` только когда это действительно необходимо.
+</Theory>
+
+<Syntax>
+### Type Assertion (утверждение типа)
+
+```go
+// Небезопасно — panic при несовпадении
+value := interfaceVar.(ConcreteType)
+
+// Безопасно — ok = false при несовпадении
+value, ok := interfaceVar.(ConcreteType)
+if ok {
+    // используем value
+}
+```
+
+### Type Switch (переключатель типа)
+
+```go
+switch v := interfaceVar.(type) {
+case Type1:
+    // v имеет тип Type1
+case Type2:
+    // v имеет тип Type2
+default:
+    // тип не совпал
+}
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Базовый Type Assertion
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var i interface{} = "Hello, World!"
+    
+    // Безопасное утверждение типа
+    str, ok := i.(string)
+    if ok {
+        fmt.Println("String value:", str)
+        fmt.Println("Length:", len(str))
+    }
+    
+    // Попытка извлечь неверный тип
+    num, ok := i.(int)
+    if !ok {
+        fmt.Println("Not an int, got zero value:", num)  // 0
+    }
+    
+    // Небезопасное утверждение (panic при несовпадении)
+    // num := i.(int)  // PANIC: interface conversion: interface {} is string, not int
+}
+```
+
+### Type Switch — основы
+
+```go
+package main
+
+import "fmt"
+
+func describe(i interface{}) {
+    switch v := i.(type) {
+    case int:
+        fmt.Printf("Integer: %d (doubled: %d)\n", v, v*2)
+    case float64:
+        fmt.Printf("Float: %.2f (squared: %.2f)\n", v, v*v)
+    case string:
+        fmt.Printf("String: %q (length: %d)\n", v, len(v))
+    case bool:
+        fmt.Printf("Boolean: %t\n", v)
+    case nil:
+        fmt.Println("Nil value")
+    default:
+        fmt.Printf("Unknown type: %T\n", v)
+    }
+}
+
+func main() {
+    describe(42)
+    describe(3.14)
+    describe("Hello")
+    describe(true)
+    describe(nil)
+    describe([]int{1, 2, 3})
+}
+```
+
+### Проверка реализации интерфейса
+
+```go
+package main
+
+import "fmt"
+
+type Stringer interface {
+    String() string
+}
+
+type Person struct {
+    Name string
+    Age  int
+}
+
+func (p Person) String() string {
+    return fmt.Sprintf("%s (%d)", p.Name, p.Age)
+}
+
+type Number int  // не реализует Stringer
+
+func printIfStringer(v interface{}) {
+    // Проверяем, реализует ли v интерфейс Stringer
+    if s, ok := v.(Stringer); ok {
+        fmt.Println("Stringer:", s.String())
+    } else {
+        fmt.Printf("Not a Stringer: %v\n", v)
+    }
+}
+
+func main() {
+    p := Person{Name: "Alice", Age: 30}
+    n := Number(42)
+    
+    printIfStringer(p)  // Stringer: Alice (30)
+    printIfStringer(n)  // Not a Stringer: 42
+}
+```
+
+### Type Switch с интерфейсами
+
+```go
+package main
+
+import "fmt"
+
+type Reader interface {
+    Read() string
+}
+
+type Writer interface {
+    Write(data string)
+}
+
+type ReadWriter interface {
+    Reader
+    Writer
+}
+
+type File struct {
+    content string
+}
+
+func (f *File) Read() string       { return f.content }
+func (f *File) Write(data string)  { f.content = data }
+
+type Console struct{}
+
+func (c Console) Write(data string) { fmt.Println(data) }
+
+func process(v interface{}) {
+    switch obj := v.(type) {
+    case ReadWriter:
+        fmt.Println("ReadWriter detected")
+        obj.Write("Hello")
+        fmt.Println("Read:", obj.Read())
+    case Reader:
+        fmt.Println("Reader only:", obj.Read())
+    case Writer:
+        fmt.Println("Writer only")
+        obj.Write("Output")
+    default:
+        fmt.Println("Unknown type")
+    }
+}
+
+func main() {
+    file := &File{content: "File content"}
+    console := Console{}
+    
+    process(file)     // ReadWriter
+    process(console)  // Writer only
+    process("string") // Unknown type
+}
+```
+
+### Обработка нескольких типов в одном case
+
+```go
+package main
+
+import "fmt"
+
+func classify(v interface{}) {
+    switch v.(type) {
+    case int, int8, int16, int32, int64:
+        fmt.Println("Signed integer")
+    case uint, uint8, uint16, uint32, uint64:
+        fmt.Println("Unsigned integer")
+    case float32, float64:
+        fmt.Println("Floating point")
+    case string:
+        fmt.Println("String")
+    case bool:
+        fmt.Println("Boolean")
+    default:
+        fmt.Printf("Other: %T\n", v)
+    }
+}
+
+func main() {
+    classify(int32(42))
+    classify(uint64(100))
+    classify(3.14)
+    classify("hello")
+    classify(true)
+    classify([]int{})
+}
+```
+
+### Практический пример: JSON-like парсер
+
+```go
+package main
+
+import "fmt"
+
+// Обработка JSON-подобных данных
+func processJSON(data interface{}) {
+    switch v := data.(type) {
+    case map[string]interface{}:
+        fmt.Println("Object:")
+        for key, value := range v {
+            fmt.Printf("  %s: ", key)
+            processJSON(value)
+        }
+    case []interface{}:
+        fmt.Println("Array:")
+        for i, item := range v {
+            fmt.Printf("  [%d]: ", i)
+            processJSON(item)
+        }
+    case string:
+        fmt.Printf("String: %q\n", v)
+    case float64:
+        fmt.Printf("Number: %v\n", v)
+    case bool:
+        fmt.Printf("Boolean: %v\n", v)
+    case nil:
+        fmt.Println("Null")
+    default:
+        fmt.Printf("Unknown: %T\n", v)
+    }
+}
+
+func main() {
+    data := map[string]interface{}{
+        "name": "Alice",
+        "age":  float64(30),
+        "active": true,
+        "tags": []interface{}{"go", "developer"},
+        "address": map[string]interface{}{
+            "city": "Moscow",
+        },
+    }
+    
+    processJSON(data)
+}
+```
+
+### Утверждение типа для интерфейса Movable
+
+```go
+package main
+
+import "fmt"
+
+type Movable interface {
+    Move()
+}
+
+type Car struct {
+    Model string
+    Speed int
+}
+
+func (c Car) Move() {
+    fmt.Printf("%s drives at %d km/h\n", c.Model, c.Speed)
+}
+
+type Plane struct {
+    Model    string
+    Altitude int
+}
+
+func (p Plane) Move() {
+    fmt.Printf("%s flies at %d meters\n", p.Model, p.Altitude)
+}
+
+func getDetails(m Movable) {
+    // Проверяем конкретный тип
+    if car, ok := m.(Car); ok {
+        fmt.Printf("Car: %s, Max speed: %d\n", car.Model, car.Speed)
+        return
+    }
+    
+    if plane, ok := m.(Plane); ok {
+        fmt.Printf("Plane: %s, Cruising altitude: %d\n", plane.Model, plane.Altitude)
+        return
+    }
+    
+    fmt.Println("Unknown vehicle")
+}
+
+func main() {
+    vehicles := []Movable{
+        Car{Model: "Tesla", Speed: 250},
+        Plane{Model: "Boeing", Altitude: 10000},
+    }
+    
+    for _, v := range vehicles {
+        v.Move()
+        getDetails(v)
+        fmt.Println()
+    }
+}
+```
+
+### Паттерн: Обработка ошибок по типу
+
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// Кастомные типы ошибок
+type ValidationError struct {
+    Field   string
+    Message string
+}
+
+func (e ValidationError) Error() string {
+    return fmt.Sprintf("validation error on %s: %s", e.Field, e.Message)
+}
+
+type NotFoundError struct {
+    Resource string
+}
+
+func (e NotFoundError) Error() string {
+    return fmt.Sprintf("%s not found", e.Resource)
+}
+
+func handleError(err error) {
+    if err == nil {
+        return
+    }
+    
+    switch e := err.(type) {
+    case ValidationError:
+        fmt.Printf("Please fix field '%s': %s\n", e.Field, e.Message)
+    case NotFoundError:
+        fmt.Printf("Could not find: %s\n", e.Resource)
+    default:
+        fmt.Printf("General error: %v\n", err)
+    }
+}
+
+func main() {
+    errors := []error{
+        ValidationError{Field: "email", Message: "invalid format"},
+        NotFoundError{Resource: "User #123"},
+        errors.New("something went wrong"),
+    }
+    
+    for _, err := range errors {
+        handleError(err)
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Небезопасное утверждение типа
+
+```go
+var i interface{} = "hello"
+
+// ❌ PANIC если тип не совпадает
+num := i.(int)
+
+// ✅ Безопасная проверка
+if num, ok := i.(int); ok {
+    fmt.Println(num)
+} else {
+    fmt.Println("Not an int")
+}
+```
+
+### 2. Забыли про nil
+
+```go
+var i interface{}  // nil
+
+// ❌ PANIC
+// _ = i.(string)
+
+// ✅ Проверяем nil
+if i != nil {
+    if s, ok := i.(string); ok {
+        fmt.Println(s)
+    }
+}
+
+// Или в type switch
+switch v := i.(type) {
+case nil:
+    fmt.Println("nil value")
+case string:
+    fmt.Println(v)
+}
+```
+
+### 3. Порядок case в type switch важен
+
+```go
+type Reader interface { Read() }
+type ReadWriter interface { 
+    Read()
+    Write()
+}
+
+func process(v interface{}) {
+    // ❌ Reader всегда совпадёт первым, даже для ReadWriter
+    switch v.(type) {
+    case Reader:
+        fmt.Println("Reader")
+    case ReadWriter:
+        fmt.Println("ReadWriter")  // никогда не выполнится!
+    }
+    
+    // ✅ Сначала проверяем более специфичный тип
+    switch v.(type) {
+    case ReadWriter:
+        fmt.Println("ReadWriter")
+    case Reader:
+        fmt.Println("Reader")
+    }
+}
+```
+
+### 4. Утверждение типа для не-интерфейса
+
+```go
+str := "hello"
+
+// ❌ ОШИБКА КОМПИЛЯЦИИ — str не интерфейс
+// _ = str.(int)
+
+// ✅ Сначала преобразуем в interface{}
+var i interface{} = str
+_, ok := i.(int)
+fmt.Println(ok)  // false
+```
+</Pitfalls>
+
+<Task id="1" points="10">
+<Title>Задание 1: Создание ошибки</Title>
+<Prompt>
+Создайте и верните ошибку.
+</Prompt>
+<Hints>
+- import "errors"
+- return nil, errors.New(...)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: деление на ноль
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="15">
+<Title>Задание 2: fmt.Errorf</Title>
+<Prompt>
+Используйте fmt.Errorf для форматированных ошибок.
+</Prompt>
+<Hints>
+- fmt.Errorf("текст: %d", value)
+- Не нужен import errors
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Обработайте ошибки
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: недопустимое значение: -5
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="20">
+<Title>Задание 3: Пользовательский тип ошибки</Title>
+<Prompt>
+Создайте свой тип ошибки с полями.
+</Prompt>
+<Hints>
+- type ValidationError struct { Field string }
+- func (e *ValidationError) Error() string {...}
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Создайте функцию согласно заданию
+// TODO: Реализуйте обработку ошибок
+// TODO: Определите и реализуйте интерфейс
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка валидации: поле Name пустое
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: errors.Is</Title>
+<Prompt>
+Проверьте тип ошибки через errors.Is.
+</Prompt>
+<Hints>
+- var ErrNotFound = errors.New(...)
+- errors.Is(err, ErrNotFound)
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Это ErrNotFound: true
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="20">
+<Title>Задание 5: Оборачивание ошибок</Title>
+<Prompt>
+Оберните ошибку с помощью %w.
+</Prompt>
+<Hints>
+- fmt.Errorf("текст: %w", err)
+- %w сохраняет цепочку ошибок
+</Hints>
+<StarterCode>
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+    "os"
+)
+
+// TODO: Реализуйте обработку ошибок
+
+func main() {
+    // Ваш код здесь
+    
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Ошибка: не удалось открыть файл: файл не существует
+Исходная ошибка: true
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,618 @@
+# Чтение и запись файлов
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **Write/WriteString** — запись байтов/строки в файл
+2. **Read** — чтение байтов из файла в буфер
+3. **io.EOF** — маркер конца файла
+4. **os.ReadFile/WriteFile** — удобные функции для работы целиком
+5. **Позиционирование** — Seek для перемещения по файлу
+6. **Циклическое чтение** — для больших файлов
+</Overview>
+
+<Theory>
+### Два подхода к работе с файлами
+
+**1. Весь файл сразу** — для небольших файлов:
+```go
+// Чтение
+data, err := os.ReadFile("config.json")
+
+// Запись
+err := os.WriteFile("output.txt", data, 0644)
+```
+
+**2. Потоковая обработка** — для больших файлов:
+```go
+file, _ := os.Open("huge.log")
+defer file.Close()
+
+buf := make([]byte, 4096)
+for {
+    n, err := file.Read(buf)
+    if n > 0 {
+        process(buf[:n])
+    }
+    if err == io.EOF {
+        break
+    }
+}
+```
+
+### Запись в файл
+
+```go
+file, _ := os.Create("output.txt")
+defer file.Close()
+
+// Байты
+file.Write([]byte{72, 101, 108, 108, 111})
+
+// Строка
+file.WriteString("Hello, World!\n")
+
+// Форматированный вывод
+fmt.Fprintf(file, "Count: %d\n", 42)
+```
+
+### Чтение из файла
+
+```go
+file, _ := os.Open("input.txt")
+defer file.Close()
+
+// В буфер
+buf := make([]byte, 100)
+n, err := file.Read(buf)
+data := buf[:n]
+
+// Весь файл (через io)
+data, err := io.ReadAll(file)
+```
+
+### Позиционирование в файле
+
+```go
+file.Seek(0, io.SeekStart)   // в начало
+file.Seek(0, io.SeekEnd)     // в конец
+file.Seek(100, io.SeekStart) // на позицию 100
+file.Seek(-10, io.SeekEnd)   // 10 байт от конца
+```
+
+### Чтение построчно
+
+Используйте `bufio.Scanner`:
+```go
+file, _ := os.Open("lines.txt")
+defer file.Close()
+
+scanner := bufio.NewScanner(file)
+for scanner.Scan() {
+    line := scanner.Text()
+    fmt.Println(line)
+}
+```
+
+### Типичные паттерны
+
+**Копирование файла:**
+```go
+src, _ := os.Open("source.txt")
+defer src.Close()
+
+dst, _ := os.Create("copy.txt")
+defer dst.Close()
+
+io.Copy(dst, src)
+```
+
+**Дописывание в файл:**
+```go
+file, _ := os.OpenFile("log.txt", 
+    os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+defer file.Close()
+
+file.WriteString("New line\n")
+```
+</Theory>
+
+<Syntax>
+### Запись
+
+```go
+file.Write([]byte("data"))     // запись байтов
+file.WriteString("text")       // запись строки
+file.WriteAt([]byte, offset)   // запись по смещению
+```
+
+### Чтение
+
+```go
+n, err := file.Read(buf)       // чтение в буфер
+n, err := file.ReadAt(buf, offset)  // чтение по смещению
+```
+
+### Удобные функции
+
+```go
+data, err := os.ReadFile("file.txt")      // прочитать весь файл
+err := os.WriteFile("file.txt", data, 0644)  // записать весь файл
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Запись строки в файл
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Create("message.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    // Запись строки
+    n, err := file.WriteString("Hello, Go!\n")
+    if err != nil {
+        fmt.Println("Write error:", err)
+        return
+    }
+    fmt.Printf("Wrote %d bytes\n", n)
+    
+    // Запись ещё одной строки
+    file.WriteString("Second line\n")
+}
+```
+
+### Запись байтов
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Create("binary.dat")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    // Запись байтов
+    data := []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f}  // "Hello"
+    n, err := file.Write(data)
+    if err != nil {
+        fmt.Println("Write error:", err)
+        return
+    }
+    fmt.Printf("Wrote %d bytes\n", n)
+}
+```
+
+### Чтение файла порциями
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+func main() {
+    file, err := os.Open("message.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    buf := make([]byte, 4)  // читаем по 4 байта
+    
+    for {
+        n, err := file.Read(buf)
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            fmt.Println("Read error:", err)
+            return
+        }
+        fmt.Printf("Read %d bytes: %s\n", n, string(buf[:n]))
+    }
+}
+```
+
+### Чтение всего файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Способ 1: os.ReadFile (рекомендуется)
+    data, err := os.ReadFile("message.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    fmt.Println("Content:", string(data))
+    
+    // Способ 2: через io.ReadAll
+    file, _ := os.Open("message.txt")
+    defer file.Close()
+    
+    content, _ := io.ReadAll(file)
+    fmt.Println("Content:", string(content))
+}
+```
+
+### Запись всего файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    content := []byte("This is the entire file content.\nLine 2.\n")
+    
+    err := os.WriteFile("output.txt", content, 0644)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    
+    fmt.Println("File written successfully")
+}
+```
+
+### Позиционирование (Seek)
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+func main() {
+    file, err := os.OpenFile("data.txt", os.O_RDWR|os.O_CREATE, 0644)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    // Записываем данные
+    file.WriteString("Hello, World!")
+    
+    // Возвращаемся в начало
+    file.Seek(0, io.SeekStart)
+    
+    // Читаем
+    buf := make([]byte, 5)
+    file.Read(buf)
+    fmt.Println("First 5 bytes:", string(buf))  // Hello
+    
+    // Переходим к 7-му байту
+    file.Seek(7, io.SeekStart)
+    file.Read(buf)
+    fmt.Println("From position 7:", string(buf))  // World
+    
+    // Переходим на 3 байта назад от конца
+    file.Seek(-3, io.SeekEnd)
+    buf = make([]byte, 3)
+    file.Read(buf)
+    fmt.Println("Last 3 bytes:", string(buf))  // ld!
+}
+```
+
+### Добавление в файл (Append)
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    "time"
+)
+
+func appendToLog(filename, message string) error {
+    file, err := os.OpenFile(filename, 
+        os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    timestamp := time.Now().Format("2006-01-02 15:04:05")
+    _, err = fmt.Fprintf(file, "[%s] %s\n", timestamp, message)
+    return err
+}
+
+func main() {
+    appendToLog("app.log", "Application started")
+    appendToLog("app.log", "Processing data...")
+    appendToLog("app.log", "Application finished")
+    
+    // Проверяем содержимое
+    content, _ := os.ReadFile("app.log")
+    fmt.Println(string(content))
+}
+```
+
+### Копирование файла
+
+```go
+package main
+
+import (
+    "fmt"
+    "io"
+    "os"
+)
+
+func copyFile(src, dst string) (int64, error) {
+    sourceFile, err := os.Open(src)
+    if err != nil {
+        return 0, err
+    }
+    defer sourceFile.Close()
+    
+    destFile, err := os.Create(dst)
+    if err != nil {
+        return 0, err
+    }
+    defer destFile.Close()
+    
+    return io.Copy(destFile, sourceFile)
+}
+
+func main() {
+    n, err := copyFile("source.txt", "copy.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    fmt.Printf("Copied %d bytes\n", n)
+}
+```
+
+### Чтение построчно
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    file, err := os.Open("lines.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    defer file.Close()
+    
+    scanner := bufio.NewScanner(file)
+    lineNum := 0
+    
+    for scanner.Scan() {
+        lineNum++
+        fmt.Printf("%d: %s\n", lineNum, scanner.Text())
+    }
+    
+    if err := scanner.Err(); err != nil {
+        fmt.Println("Scanner error:", err)
+    }
+}
+```
+</Examples>
+
+<Pitfalls>
+### 1. Не проверяем количество записанных байт
+
+```go
+// ❌ Не проверяем, всё ли записано
+file.Write(data)
+
+// ✅ Проверяем
+n, err := file.Write(data)
+if err != nil {
+    return err
+}
+if n != len(data) {
+    return fmt.Errorf("partial write: %d/%d", n, len(data))
+}
+```
+
+### 2. Чтение в переиспользуемый буфер
+
+```go
+buf := make([]byte, 10)
+
+// ❌ Буфер может содержать старые данные
+n, _ := file.Read(buf)
+fmt.Println(string(buf))  // может напечатать мусор
+
+// ✅ Используйте только прочитанные байты
+n, _ := file.Read(buf)
+fmt.Println(string(buf[:n]))
+```
+
+### 3. Чтение большого файла целиком
+
+```go
+// ❌ Может исчерпать память
+data, _ := os.ReadFile("huge_file.dat")
+
+// ✅ Читайте порциями
+file, _ := os.Open("huge_file.dat")
+defer file.Close()
+buf := make([]byte, 4096)
+for {
+    n, err := file.Read(buf)
+    if err == io.EOF {
+        break
+    }
+    process(buf[:n])
+}
+```
+</Pitfalls>
+
+<Task id="1" points="15">
+<Title>Задание 1: http.FileServer</Title>
+<Prompt>
+Создайте файловый сервер.
+</Prompt>
+<Hints>
+- fs := http.FileServer(http.Dir("./static"))
+- http.Handle("/static/", http.StripPrefix("/static/", fs))
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Файловый сервер: http.FileServer(http.Dir(\"./static\"))")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Файловый сервер: http.FileServer(http.Dir("./static"))
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: http.StripPrefix</Title>
+<Prompt>
+Удалите префикс пути.
+</Prompt>
+<Hints>
+- http.StripPrefix("/static/", fs)
+- /static/css/style.css -> css/style.css
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("StripPrefix: /static/file.js -> file.js")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+StripPrefix: /static/file.js -> file.js
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="15">
+<Title>Задание 3: embed для статики</Title>
+<Prompt>
+Встройте файлы в бинарник.
+</Prompt>
+<Hints>
+- //go:embed static/*
+- var staticFS embed.FS
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("embed: //go:embed static/*")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+embed: //go:embed static/*
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: Кеширование статики</Title>
+<Prompt>
+Добавьте заголовки кеширования.
+</Prompt>
+<Hints>
+- w.Header().Set("Cache-Control", "max-age=3600")
+- ETag для версионирования
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Кеш: Cache-Control: max-age=3600")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Кеш: Cache-Control: max-age=3600
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="10">
+<Title>Задание 5: MIME типы</Title>
+<Prompt>
+Определите Content-Type по расширению.
+</Prompt>
+<Hints>
+- import "mime"
+- mime.TypeByExtension(".js")
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("MIME: .js -> application/javascript")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+MIME: .js -> application/javascript
+</ExpectedOutput>
+</Task>

@@ -1,0 +1,411 @@
+# Управление зависимостями с помощью папки vendor
+
+<Meta>
+reading_time: 6
+</Meta>
+
+<Overview>
+1. **vendor** — локальная копия всех зависимостей в папке проекта
+2. **Изоляция** — проект не зависит от глобального кеша или сети
+3. **Воспроизводимость** — гарантия одинаковых версий на любой машине
+4. **Офлайн-сборка** — можно собирать проект без интернета
+5. **go mod vendor** — команда для создания/обновления папки vendor
+</Overview>
+
+<Theory>
+### Что такое vendoring?
+
+**Vendoring** — это копирование всех зависимостей проекта в папку `vendor/` внутри проекта. Вместо использования глобального кеша, Go использует локальные копии.
+
+### Зачем нужен vendor?
+
+1. **Офлайн-сборка** — не нужен интернет
+2. **Воспроизводимость** — точно такие же версии везде
+3. **Безопасность** — зависимости под контролем
+4. **CI/CD** — ускорение сборки (не нужно скачивать)
+5. **Стабильность** — защита от удаления пакета из интернета
+
+### Когда использовать vendor?
+
+**Используйте:**
+- В продакшн-проектах для гарантии сборки
+- При строгих требованиях к безопасности
+- Когда нужна автономная работа
+
+**Не обязательно:**
+- В небольших проектах
+- При активной разработке (неудобно обновлять)
+- При использовании CI с кешированием модулей
+
+### Как работает go mod vendor
+
+```bash
+go mod vendor
+```
+
+Команда:
+1. Читает `go.mod` и `go.sum`
+2. Копирует все зависимости в `vendor/`
+3. Создаёт `vendor/modules.txt` с метаданными
+
+### Структура папки vendor
+
+```
+vendor/
+├── modules.txt                    # список всех модулей
+├── github.com/
+│   ├── gin-gonic/gin/             # код Gin
+│   └── stretchr/testify/          # код Testify
+└── golang.org/x/
+    └── sync/                      # расширения stdlib
+```
+
+### Приоритет vendor
+
+С Go 1.14+ если папка `vendor/` существует, она используется автоматически при `go build`.
+
+Явное управление:
+```bash
+go build -mod=vendor  # использовать vendor
+go build -mod=mod     # игнорировать vendor
+```
+
+### Обновление vendor
+
+После изменения зависимостей:
+```bash
+go mod tidy      # сначала обновить go.mod
+go mod vendor    # затем обновить vendor
+```
+
+### vendor и Git
+
+**Два подхода:**
+
+1. **Коммитить vendor** — полная автономность
+   ```gitignore
+   # .gitignore — НЕ добавляйте vendor
+   ```
+
+2. **Не коммитить** — меньше размер репозитория
+   ```gitignore
+   # .gitignore
+   vendor/
+   ```
+
+Большинство проектов НЕ коммитят vendor.
+</Theory>
+
+<Syntax>
+### Основные команды
+
+```bash
+# Создание папки vendor
+go mod vendor
+
+# Сборка с явным использованием vendor
+go build -mod=vendor
+
+# Запуск с vendor
+go run -mod=vendor .
+
+# Обновление vendor после изменения зависимостей
+go mod vendor
+```
+
+### Структура папки vendor
+
+```
+myproject/
+├── go.mod
+├── go.sum
+├── main.go
+└── vendor/
+    ├── modules.txt           # метаданные
+    └── github.com/
+        └── somepackage/
+            └── ...           # исходный код
+```
+</Syntax>
+
+<Examples>
+кода
+
+### Шаг 1: Инициализация проекта
+
+```bash
+mkdir myapp
+cd myapp
+go mod init myapp
+```
+
+### Шаг 2: Добавление зависимостей
+
+```bash
+go get github.com/fatih/color
+go get github.com/rs/zerolog
+```
+
+### Шаг 3: Написание кода
+
+**main.go:**
+```go
+package main
+
+import (
+    "os"
+    
+    "github.com/fatih/color"
+    "github.com/rs/zerolog"
+    "github.com/rs/zerolog/log"
+)
+
+func main() {
+    // Настройка логгера
+    log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+    
+    // Цветной вывод
+    color.Green("Application started!")
+    
+    // Логирование
+    log.Info().Msg("Hello from zerolog!")
+    log.Debug().Str("status", "ok").Msg("Debug message")
+    
+    color.Blue("Application finished!")
+}
+```
+
+### Шаг 4: Создание папки vendor
+
+```bash
+go mod vendor
+```
+
+Результат:
+```
+myapp/
+├── go.mod
+├── go.sum
+├── main.go
+└── vendor/
+    ├── modules.txt
+    ├── github.com/
+    │   ├── fatih/
+    │   │   └── color/
+    │   ├── mattn/
+    │   │   ├── go-colorable/
+    │   │   └── go-isatty/
+    │   └── rs/
+    │       └── zerolog/
+    └── golang.org/
+        └── x/
+            └── sys/
+```
+
+### Содержимое vendor/modules.txt
+
+```
+# github.com/fatih/color v1.15.0
+</Examples>
+
+<Pitfalls>
+### 1. vendor создан до написания кода
+
+```bash
+# ❌ Предупреждение
+$ go mod vendor
+go: warning: "all" matched no packages
+
+# ✅ Сначала напишите код с import, потом vendor
+```
+
+### 2. vendor не обновлён после go get
+
+```bash
+# ❌ Добавили зависимость, но vendor старый
+go get github.com/new/package
+go build .  # OK (использует кеш)
+
+# На другой машине (без кеша):
+go build -mod=vendor .  # ОШИБКА: пакет не найден в vendor
+
+# ✅ После go get обновите vendor
+go mod vendor
+```
+
+### 3. Конфликт vendor и go.mod
+
+```bash
+# ❌ Ошибка при сборке
+go: inconsistent vendoring in /path/to/project:
+    github.com/pkg@v1.0.0: is explicitly required in go.mod, but not marked as explicit in vendor/modules.txt
+
+# ✅ Пересоздайте vendor
+go mod vendor
+```
+
+### 4. Редактирование файлов в vendor
+
+```
+# ❌ НИКОГДА не редактируйте файлы в vendor/
+# Изменения будут потеряны при go mod vendor
+
+# ✅ Используйте replace в go.mod для замены пакета
+replace github.com/original => ../my-fork
+```
+
+### 5. Слишком большой vendor в библиотеке
+
+```
+# ❌ Для БИБЛИОТЕК vendor не нужен
+# Это вызовет конфликты у пользователей
+
+# ✅ vendor нужен только для ПРИЛОЖЕНИЙ
+```
+
+### 6. Забыли закоммитить изменения vendor
+
+```bash
+# ❌ Обновили vendor, но не закоммитили
+git status  # vendor/... modified
+
+# На CI/CD — старая версия, ошибки!
+
+# ✅ Коммитьте vendor вместе с go.mod и go.sum
+git add vendor/ go.mod go.sum
+git commit -m "Update dependencies"
+```
+</Pitfalls>
+
+<Task id="1" points="5">
+<Title>Задание 1: vendor концепция</Title>
+<Prompt>
+Понимание папки vendor.
+</Prompt>
+<Hints>
+- go mod vendor создаёт папку
+- Позволяет оффлайн сборку
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Vendor: локальные зависимости")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Vendor: локальные зависимости
+</ExpectedOutput>
+</Task>
+
+<Task id="2" points="10">
+<Title>Задание 2: go mod vendor</Title>
+<Prompt>
+Команда для создания vendor.
+</Prompt>
+<Hints>
+- Копирует зависимости из кеша
+- Создаёт vendor/modules.txt
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Команда: go mod vendor")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+Команда: go mod vendor
+</ExpectedOutput>
+</Task>
+
+<Task id="3" points="10">
+<Title>Задание 3: Преимущества vendor</Title>
+<Prompt>
+Зачем нужен vendor.
+</Prompt>
+<Hints>
+- Независимость от сети
+- Можно коммитить в git
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("1. Оффлайн сборка")
+    fmt.Println("2. Воспроизводимость")
+    fmt.Println("3. Контроль версий")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+1. Оффлайн сборка
+2. Воспроизводимость
+3. Контроль версий
+</ExpectedOutput>
+</Task>
+
+<Task id="4" points="15">
+<Title>Задание 4: go mod tidy</Title>
+<Prompt>
+Очистка зависимостей.
+</Prompt>
+<Hints>
+- Синхронизирует go.mod и код
+- Запускать после изменений
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("go mod tidy:")
+    fmt.Println("- Удаляет неиспользуемые")
+    fmt.Println("- Добавляет недостающие")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+go mod tidy:
+- Удаляет неиспользуемые
+- Добавляет недостающие
+</ExpectedOutput>
+</Task>
+
+<Task id="5" points="15">
+<Title>Задание 5: go mod download</Title>
+<Prompt>
+Загрузка зависимостей.
+</Prompt>
+<Hints>
+- Загружает без компиляции
+- Кеш в GOPATH/pkg/mod
+</Hints>
+<StarterCode>
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("go mod download: загружает в кеш")
+}
+```
+</StarterCode>
+<ExpectedOutput>
+go mod download: загружает в кеш
+</ExpectedOutput>
+</Task>
